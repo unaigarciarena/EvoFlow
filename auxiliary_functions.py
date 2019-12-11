@@ -1,6 +1,6 @@
 import numpy as np
-from functools import reduce
-from Network import NetworkDescriptor, init_functions, act_functions
+
+from Network import MLPDescriptor, ConvDescriptor, initializations, activations
 
 
 def batch(x, size, i):
@@ -22,31 +22,9 @@ def batch(x, size, i):
         return x[i:index, :]
 
 
-def init_mlp_desc(input_size, output_size, nlayers, max_layer_size):
+def init_conv_desc(input_dim, output_dim, max_lay, max_size):
 
-    if hasattr(input_size, '__iter__'):
-        input_size = reduce(lambda x, y: x*y, input_size)
-    if hasattr(output_size, '__iter__'):
-        output_size = reduce(lambda x, y: x*y, output_size)
-
-    n_hidden = np.random.randint(nlayers)+1
-
-    dim_list = [np.random.randint(max_layer_size)+1 for _ in range(n_hidden)]
-
-    initializers = np.random.choice(init_functions, size=n_hidden+1)
-    activations = np.random.choice(act_functions, size=n_hidden+1)
-
-    batch_norm = np.random.choice(range(0, n_hidden), size=np.random.randint(0, n_hidden, size=1), replace=False)
-    dropout = np.random.choice(range(0, n_hidden), size=np.random.randint(0, n_hidden, size=1), replace=False)
-
-    descriptor = NetworkDescriptor(n_hidden, input_size, output_size, dim_list, initializers, activations, dropout, batch_norm)
-
-    return descriptor
-
-
-def init_conv_descriptor(input_dim, output_dim):
-
-    layers = np.random.choice([0, 1, 2], size=2)  # Number of layers = 2
+    layers = np.random.choice([0, 1, 2], size=np.random.randint(np.max((max_lay, 2))))  # Number of layers = 2
 
     filters = [np.random.randint(1, 5) if layers[i] == 2 else -1 for i in range(layers.shape[0])]
     init = [np.random.randint(0, 2) if layers[i] == 2 else -1 for i in range(layers.shape[0])]
@@ -54,8 +32,6 @@ def init_conv_descriptor(input_dim, output_dim):
 
     sizes = np.concatenate((np.random.randint(2, 4, size=(layers.shape[0], 2)), np.random.randint(1, 3, size=(layers.shape[0], 1))), axis=1)
     strides = np.random.randint(1, 2, size=layers.shape[0])
-    mydescriptor = ConvolutionDescriptor(input_dim, output_dim, 0)
+    descriptor = ConvDescriptor(input_dim, output_dim, layers, filters, strides, sizes, act, init)
 
-    mydescriptor.initialization(layers, filters, strides, sizes, act, init, 0)
-
-    return mydescriptor
+    return descriptor

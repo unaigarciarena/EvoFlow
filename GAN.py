@@ -1,23 +1,32 @@
+"""
+This is a use case of EvoFlow
+
+Another example of a multinetwork model, a GAN. In order to give an automatic fitness fuction to each GAN, we use the Inception Score (IS, https://arxiv.org/pdf/1606.03498.pdf)
+We use the MobileNet model instead of Inception because it gave better accuracy scores when training it.
+"""
 from data import load_fashion
 import tensorflow as tf
 import numpy as np
 from keras.models import model_from_json
 from evolution import Evolving, batch
-from scipy import misc
+from Network import MLPDescriptor
+from PIL import Image
 
 
-def gan_train(nets, placeholders, sess, graph, train_inputs, _, batch_size):
+def gan_train(nets, placeholders, sess, graph, train_inputs, _, batch_size, __):
     aux_ind = 0
     predictions = {}
 
     with graph.as_default():
-        out = nets["n1"].network_building(placeholders["in"]["i1"], graph)
+        # We define the special GAN structure
+        out = nets["n1"].building(placeholders["in"]["i1"], graph)
         predictions["gen"] = out
-        out = nets["n0"].network_building(tf.layers.flatten(placeholders["in"]["i0"]), graph)
+        out = nets["n0"].building(tf.layers.flatten(placeholders["in"]["i0"]), graph)
         predictions["realDisc"] = out
-        out = nets["n0"].network_building(predictions["gen"], graph)
+        out = nets["n0"].building(predictions["gen"], graph)
         predictions["fakeDisc"] = out
 
+        # Loss function and optimizer
         d_loss = -tf.reduce_mean(predictions["realDisc"]) + tf.reduce_mean(predictions["fakeDisc"])
         g_loss = -tf.reduce_mean(predictions["fakeDisc"])
 
@@ -25,9 +34,7 @@ def gan_train(nets, placeholders, sess, graph, train_inputs, _, batch_size):
         d_solver = tf.train.AdamOptimizer(learning_rate=0.01).minimize(d_loss, var_list=[nets["n0"].List_weights, nets["n0"].List_bias])
         sess.run(tf.global_variables_initializer())
 
-        for it in range(1000):
-            # Learning loop for discriminator
-
+        for it in range(10):  # Train the model
             z_mb = np.random.normal(size=(150, 10))
 
             x_mb = batch(train_inputs["i0"], batch_size, aux_ind)
@@ -35,31 +42,34 @@ def gan_train(nets, placeholders, sess, graph, train_inputs, _, batch_size):
 
             _ = sess.run([d_solver], feed_dict={placeholders["in"]["i0"]: x_mb, placeholders["in"]["i1"]: z_mb})
             _ = sess.run([g_solver], feed_dict={placeholders["in"]["i1"]: z_mb})
-
         return predictions
 
 
-def load_model(model_name="Mobile"):
+def load_model(model_name="Mobile"):  # We load the model once at the beginning of the process
 
     model_paths = {"Mobile": "Mobile-99-94/", "Inception": "Inception-95-91/"}
     json_file = open(model_paths[model_name] + 'model.json', 'r')
-    g_1 = tf.Graph()
+    g_1 = tf.Graph()  # In a different graph, because the ones containing the individuals are constantly reinitialized
     with g_1.as_default():
         class_model = model_from_json(json_file.read())
         class_model.load_weights(model_paths[model_name] + "model.h5")
         class_model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
     json_file.close()
-    return g_1, class_model
+    return g_1, class_model  # return graph and model
 
 
-def gan_eval(preds, placeholders, sess, graph, _, output):
+def gan_eval(preds, placeholders, sess, graph, _, __, ___):
 
     height, width = 90, 90
     with graph.as_default():
-        samples = sess.run(preds["gen"], feed_dict={placeholders["i1"]: np.random.normal(size=(150, 10))})
+        samples = sess.run(preds["gen"], feed_dict={placeholders["i1"]: np.random.normal(size=(150, 10))})  # We generate data
 
-    images = np.array([misc.imresize(x, (height, width)).astype(float) for x in iter(np.reshape(samples, (-1, 28, 28, 3)))])/255.
-
+    # Make it usable for MoblieNet
+    samples = np.reshape(samples, (-1, 28, 28, 1))
+    images = np.array([np.array(Image.fromarray(x).resize((width, height))) for x in np.reshape(samples, (-1, 28, 28))])/255.
+    images = np.reshape(images, (-1, width, height, 1))
+    images = np.concatenate([images, images, images], axis=3)
+    # Compute the IS
     with mobile_graph.as_default():
         predictions = model.predict(images)
     preds = np.argmax(predictions, axis=1)
@@ -76,11 +86,11 @@ def gan_eval(preds, placeholders, sess, graph, _, output):
 
 if __name__ == "__main__":
 
-    mobile_graph, model = load_model()
+    mobile_graph, model = load_model()  # The model and its graph are used as global variables
 
     x_train, _, x_test, _ = load_fashion()
-
-    e = Evolving(gan_train, 2, [x_train], [x_train], [x_test], [x_test], gan_eval, 150, 100, 50, n_inputs=[[28, 28], [10]], n_outputs=[[1], [784]])
+    # The GAN evolutive process is a common 2-DNN evolution
+    e = Evolving(loss=gan_train, desc_list=[MLPDescriptor, MLPDescriptor], x_trains=[x_train], y_trains=[x_train], x_tests=[x_test], y_tests=[x_test], evaluation=gan_eval, batch_size=150, population=10, generations=10, n_inputs=[[28, 28], [10]], n_outputs=[[1], [784]])
     res = e.evolve()
 
-    print(res)
+    print(res[0])
