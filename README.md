@@ -6,6 +6,11 @@
 
 This tool has the basic dependencies of numpy and functiools. However, the largest part of the library and core lay on tensorflow for the model creation and evaluation, and on DEAP for the evolutionary component.
 
+<p align="left">
+<a href="https://www.tensorflow.org/"><img src="https://upload.wikimedia.org/wikipedia/commons/2/2d/Tensorflow_logo.svg" height=250 align="left" /></a>
+<a href="https://github.com/deap/deap"><img src="https://repository-images.githubusercontent.com/20035587/2559bd00-9a75-11e9-9686-0697d18522cf" height=250 align="left" /></a>
+</p>
+
 ## Library characteristics
 
 It is highly customizable, and its usage does not require great familiarity with any of the libraries above.
