@@ -1,8 +1,12 @@
 # EvoFlow
 
-This tool provides the necessary facilities for the evolution of DNN structures with different needs, objectives, and complexities.
+**This tool provides the necessary facilities for the evolution of DNN structures with different needs, objectives, and complexities.**
 
-The DNN part is lays on tensorflow, while the evolutionary component relies on DEAP.
+## Main library dependencies
+
+This tool has the basic dependencies of numpy and functiools. However, the largest part of the library and core lay on tensorflow for the model creation and evaluation, and on DEAP for the evolutionary component.
+
+## Library characteristics
 
 It is highly customizable, and its usage does not require great familiarity with any of the libraries above.
 
