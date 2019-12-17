@@ -11,6 +11,8 @@ This Python tool has the basic dependencies of numpy and functools. However, the
 <a href="https://github.com/deap/deap"><img src="https://repository-images.githubusercontent.com/20035587/2559bd00-9a75-11e9-9686-0697d18522cf" height=250 align="right" /></a>
 </p>
 
+<br><br><br><br><br><br><br><br><br><br><br>
+
 ## Evolution modes
 
 As it has been said, EvoFlow is able to fit in scenarios with different requirements and user knowledge in the area. The following diagram shows the three evolution modes currently available in EvoFlow:
