@@ -184,7 +184,7 @@ class Evolving:
 
         if len(self.descriptors) == 1 and self.descriptors[0] is MLPDescriptor and len(self.ev_hypers) == 0:  # Simple case
             network_descriptor["n0"] = MLPDescriptor()
-            network_descriptor["n0"].random_init(self.train_inputs["i0"].shape[1:], self.train_outputs["o0"].shape[1], self.nlayers, self.max_lay, no_drop, no_batch)
+            network_descriptor["n0"].random_init(self.train_inputs["i0"].shape[1:], self.train_outputs["o0"].shape[1], self.nlayers, self.max_lay, None, None, no_drop, no_batch)
         else:  # Custom case
             for i, descriptor in enumerate(self.descriptors):
                 network_descriptor["n" + str(i)] = descriptor()
