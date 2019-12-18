@@ -139,6 +139,10 @@ More examples of this kind of learning can be found in the following examples:
 3. <a href="./GAN.py">GAN.py</a> presents a more complicated way of MLP interaction, as the complexity of the GAN model creation and the loss function definition considerably increases.
 4. <a href="./CNNAE.py">CNNAE.py</a> finally defines a convolutional autoencoder, where trasposed convolutional DNNs are applied.
 
+### Bonus: Model type creation
+
+Besides this type of customization, new model structures can also be added to EvoFlow. For that, new a new Descriptor and Network class have to be defined, following the MLPDescriptor-MLP and CNNDescriptor-CNN patterns in <a href="./Network.py">Network.py</a>. This requires deeper knowledge about how EvoFlow works.
+
 ## Publications
 
 An early version of EvoFlow was used for *Evolved GANs for generating Pareto set approximations* [[4]](#4). If you were to find EvoFlow interesting and happen to use it for your own applications, please, consider citing that paper:
