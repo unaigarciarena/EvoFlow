@@ -11,6 +11,8 @@ This Python tool has the basic dependencies of numpy and functools. However, the
 <a href="https://github.com/deap/deap"><img src="https://repository-images.githubusercontent.com/20035587/2559bd00-9a75-11e9-9686-0697d18522cf" height=250 align="right" /></a>
 </p>
 
+<br><br><br><br><br><br><br><br><br><br><br>
+
 ## Evolution modes
 
 As it has been said, EvoFlow is able to fit in scenarios with different requirements and user knowledge in the area. The following diagram shows the three evolution modes currently available in EvoFlow:
@@ -136,6 +138,10 @@ More examples of this kind of learning can be found in the following examples:
 1. <a href="./sequential.py">sequential.py</a> places two MLPs in sequential form for the same classification problem
 3. <a href="./GAN.py">GAN.py</a> presents a more complicated way of MLP interaction, as the complexity of the GAN model creation and the loss function definition considerably increases.
 4. <a href="./CNNAE.py">CNNAE.py</a> finally defines a convolutional autoencoder, where trasposed convolutional DNNs are applied.
+
+### Bonus: Model type creation
+
+Besides this type of customization, new model structures can also be added to EvoFlow. For that, new a new Descriptor and Network class have to be defined, following the MLPDescriptor-MLP and CNNDescriptor-CNN patterns in <a href="./Network.py">Network.py</a>. This requires deeper knowledge about how EvoFlow works.
 
 ## Publications
 
