@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
     x_train, _, x_test, _ = load_fashion()
     # The GAN evolutive process is a common 2-DNN evolution
-    e = Evolving(loss=gan_train, desc_list=[MLPDescriptor, MLPDescriptor], x_trains=[x_train], y_trains=[x_train], x_tests=[x_test], y_tests=[x_test], evaluation=gan_eval, batch_size=150, population=10, generations=10, n_inputs=[[28, 28], [10]], n_outputs=[[1], [784]])
+    e = Evolving(loss=gan_train, desc_list=[MLPDescriptor, MLPDescriptor], x_trains=[x_train], y_trains=[x_train], x_tests=[x_test], y_tests=[x_test], evaluation=gan_eval, batch_size=150, population=10, generations=10, n_inputs=[[28, 28], [10]], n_outputs=[[1], [784]], cxp=0.5, mtp=0.5)
     res = e.evolve()
 
     print(res[0])

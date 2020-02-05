@@ -30,7 +30,7 @@ class MyContainer(object):
 
 
 class Evolving:
-    def __init__(self, loss="XEntropy", desc_list=(MLPDescriptor, ), x_trains=None, y_trains=None, x_tests=None, y_tests=None, evaluation="Accuracy_error", n_inputs=((28, 28)), n_outputs=((10)), batch_size=100, population=20, generations=20, iters=10, lrate=0.01, sel=0, n_layers=10, max_layer_size=100, max_filter=4, max_stride=3, seed=0, cxp=0, mtp=1, no_dropout=False, no_batch_norm=False, evol_kwargs={}, sel_kwargs={}, ev_alg=1, hyperparameters={}):
+    def __init__(self, loss="XEntropy", desc_list=(MLPDescriptor, ), complex=False, x_trains=None, y_trains=None, x_tests=None, y_tests=None, evaluation="Accuracy_error", n_inputs=((28, 28)), n_outputs=((10)), batch_size=100, population=20, generations=20, iters=10, lrate=0.01, sel=0, n_layers=10, max_layer_size=100, max_filter=4, max_stride=3, seed=0, cxp=0, mtp=1, no_dropout=False, no_batch_norm=False, evol_kwargs={}, sel_kwargs={}, ev_alg=1, hyperparameters={}):
         """
         This is the main class in charge of evolving model descriptors.
         """
@@ -64,6 +64,7 @@ class Evolving:
         self.test_inputs = {}                                           # Test data (X)
         self.test_outputs = {}                                          # Test data (y)
         self.data_save(x_trains, y_trains, x_tests, y_tests)            # Save data in the previous dicts
+        self.complex = (type(loss) is not str) or (type(evaluation) is not str) or complex or len(self.descriptors) > 1 or self.descriptors[0] is not MLPDescriptor or len(hyperparameters) > 0
 
         self.toolbox = base.Toolbox()
         self.ev_alg = None                                              # DEAP evolutionary algorithm function
@@ -75,6 +76,7 @@ class Evolving:
         self.population_size = population                               # Individuals in a population
         self.ev_hypers = hyperparameters                                # Hyperparameters to be evolved (e.g., optimizer, batch size)
         self.initialize_deap(sel, sel_kwargs, ev_alg, evol_kwargs, no_batch_norm, no_dropout)      # Initialize DEAP-related matters
+        # Add model saving parameter
 
     def data_save(self, x_trains, y_trains, x_tests, y_tests):
         """
@@ -182,7 +184,7 @@ class Evolving:
 
         network_descriptor = {}
 
-        if len(self.descriptors) == 1 and self.descriptors[0] is MLPDescriptor and len(self.ev_hypers) == 0:  # Simple case
+        if not self.complex:  # Simple case
             network_descriptor["n0"] = MLPDescriptor()
             network_descriptor["n0"].random_init(self.train_inputs["i0"].shape[1:], self.train_outputs["o0"].shape[1], self.nlayers, self.max_lay, None, None, no_drop, no_batch)
         else:  # Custom case
@@ -206,7 +208,7 @@ class Evolving:
 
         graph = tf.Graph()
 
-        if len(self.descriptors) == 1 and self.descriptors[0] is MLPDescriptor and len(self.ev_hypers) == 0:
+        if not self.complex:
             ev = self.single_net_eval(individual, graph)
         else:
             ev = self.eval_multinetwork(individual, graph)

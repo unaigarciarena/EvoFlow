@@ -22,7 +22,7 @@ For this, we need to:
 """
 
 
-def train_sequential(nets, placeholders, sess, graph, train_inputs, train_outputs, batch_size, hypers):
+def train_wann(nets, placeholders, sess, graph, train_inputs, train_outputs, batch_size, hypers):
     """
     This function takes care of arranging the model and training it. It is used by the evolutionary internally,
     and always is provided with the same parameters
@@ -43,26 +43,11 @@ def train_sequential(nets, placeholders, sess, graph, train_inputs, train_output
         # The following four lines define the model layout:
         out = nets["n0"].building(tf.layers.flatten(placeholders["in"]["i0"]), graph)
         predictions["n0"] = out  # We construct n0 over its input placeholder, "in"-> "i0"
-        out = nets["n1"].building(predictions["n0"], graph)
-        predictions["n1"] = out  # We construct n1 over n0 because they are supposed to be sequential
-
-        # Define the loss function and optimizer with the output of n1, which is the final output of the model
-        lf = tf.losses.softmax_cross_entropy(placeholders["out"]["o1"], predictions["n1"])
-        opt = optimizers[hypers["optimizer"]](learning_rate=hypers["lrate"]).minimize(lf)
-
-        # The rest is typical training
-        sess.run(tf.global_variables_initializer())
-
-        for i in range(10):
-            # As the input of n1 is the output of n0, these two placeholders need no feeding
-            _, loss = sess.run([opt, lf], feed_dict={placeholders["in"]["i0"]: batch(train_inputs["i0"], batch_size, aux_ind), placeholders["out"]["o1"]: batch(train_outputs["o0"], batch_size, aux_ind)})
-
-            aux_ind = (aux_ind + batch_size) % train_inputs["i0"].shape[0]
 
     return predictions
 
 
-def eval_sequential(preds, placeholders, sess, graph, inputs, outputs, _):
+def eval_wann(preds, placeholders, sess, graph, inputs, outputs, _):
     """
     Here we compute the fitness of the model. It is used by the evolutionary internally and always is provided with the same parameters
     :param preds: Dictionary created in the arranging and training function
@@ -75,7 +60,9 @@ def eval_sequential(preds, placeholders, sess, graph, inputs, outputs, _):
     :return: fitness of the model (as a tuple)
     """
     with graph.as_default():
-        res = sess.run(tf.nn.softmax(preds["n1"]), feed_dict={placeholders["i0"]: inputs["i0"]})
+
+        sess.run(tf.global_variables_initializer())
+        res = sess.run(tf.nn.softmax(preds["n0"]), feed_dict={placeholders["i0"]: inputs["i0"]})
         sess.close()
 
         return accuracy_error(res, outputs["o0"]),
@@ -90,13 +77,10 @@ if __name__ == "__main__":
     y_train = OHEnc.fit_transform(np.reshape(y_train, (-1, 1))).toarray()
 
     y_test = OHEnc.fit_transform(np.reshape(y_test, (-1, 1))).toarray()
-    # When calling the function, we indicate the training function, what we want to evolve (two MLPs), input and output data for training and
-    # testing, fitness function, batch size, population size, number of generations, input and output dimensions of the networks, crossover and
-    # mutation probability, the hyperparameters being evolved (name and possibilities), and whether batch normalization and dropout should be
-    # present in evolution
-    e = Evolving(loss=train_sequential, desc_list=[MLPDescriptor, MLPDescriptor], x_trains=[x_train], y_trains=[y_train], x_tests=[x_test],
-                 y_tests=[y_test], evaluation=eval_sequential, batch_size=150, population=10, generations=10, n_inputs=[[28, 28], [10]],
-                 n_outputs=[[10], [10]], cxp=0.5, mtp=0.5, hyperparameters={"lrate": [0.1, 0.5, 1], "optimizer": [0, 1, 2]},
+
+    e = Evolving(loss=train_wann, desc_list=[MLPDescriptor], x_trains=[x_train], y_trains=[y_train], x_tests=[x_test], y_tests=[y_test],
+                 evaluation=eval_wann, batch_size=150, population=500, generations=10000, n_inputs=[[28, 28]], n_outputs=[[10]], cxp=0, mtp=1,
                  no_batch_norm=True, no_dropout=True)
     a = e.evolve()
+
     print(a[-1])
