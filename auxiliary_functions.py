@@ -1,6 +1,9 @@
+import keras
 import numpy as np
+from keras.initializers import RandomUniform, RandomNormal, glorot_uniform
+from keras.layers import Dense, Activation, BatchNormalization, Dropout, InputLayer
 
-from Network import MLPDescriptor, ConvDescriptor, initializations, activations
+from Network import MLPDescriptor, ConvDescriptor
 
 
 def batch(x, size, i):
@@ -35,3 +38,81 @@ def init_conv_desc(input_dim, output_dim, max_lay, max_size):
     descriptor = ConvDescriptor(input_dim, output_dim, layers, filters, strides, sizes, act, init)
 
     return descriptor
+
+
+def to_keras(individual, num_clases):
+    """
+    Builds a Sequential model from a MLPDescriptor
+
+    Parameters
+    ----------
+    individual: MLPDescriptor
+        Evolved network descriptor
+    num_clases: int
+
+    Returns
+    -------
+    keras.Sequential
+        Keras sequential model
+    """
+
+    def add_layer(model, layer, individual, output=False):
+        """
+        Adds layer to the model
+
+        Parameters
+        ----------
+        model: keras.Sequential
+            Updating model
+        layer: int
+            Layer index
+        individual: MLPDescriptor
+            Evolved network descriptor
+        output: bool
+            Whether the layer is output layer or not
+
+        Returns
+        -------
+        keras.Sequential
+            Updated model
+        """
+        # Define Keras initialization function
+        init = individual.init_functions[layer]
+        if init.__name__ == 'random_uniform':
+            init = RandomUniform(minval=-0.05, maxval=0.05, seed=None)
+        elif init.__name__ == 'random_normal':
+            init = RandomNormal(mean=0.0, stddev=0.05, seed=None)
+        else:
+            init = glorot_uniform()
+
+        if output:
+            # Add output dense layer
+            model.add(Dense(num_clases, kernel_initializer=init))
+        else:
+            # Add dense layer
+            model.add(Dense(individual.dims[layer], kernel_initializer=init))
+
+        # Add activation layer
+        model.add(Activation(individual.act_functions[layer]))
+
+        # Add dropout layer
+        if individual.dropout[layer]:
+            model.add(Dropout(individual.dropout_probs[layer]))
+        if individual.batch_norm[layer]:
+            model.add(BatchNormalization())
+
+        return model
+
+    # Create model
+    model = keras.Sequential()
+    # Add input layer
+    model.add(InputLayer(input_shape=(individual.input_dim,)))
+
+    # Add layers
+    for layer in range(individual.number_hidden_layers):
+        model = add_layer(model, layer, individual, output=False)
+
+    # Add output layer
+    model = add_layer(model, individual.number_hidden_layers, individual, output=True)
+
+    return model
