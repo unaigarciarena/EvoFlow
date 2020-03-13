@@ -622,6 +622,7 @@ class MLP(Network):
                 layer = tf.matmul(layer, self.List_weights[lay]) + self.List_bias[lay]
 
                 if self.descriptor.batch_norm[lay] > 0:
+                    print("batch")
                     layer = tf.layers.batch_normalization(layer)
 
                 if act is not None and lay < self.descriptor.number_hidden_layers:

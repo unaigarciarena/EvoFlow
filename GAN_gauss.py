@@ -72,14 +72,15 @@ def gan_eval(preds, placeholders, sess, graph, _, outputs, __):
 
     mmd_value, centers = mmd(candidate=samples, target=outputs["o0"])
 
-    if mmd_value < best_mmd or True:
+    if mmd_value < best_mmd:
         best_mmd = mmd_value
-        plt.plot(samples[:, 0], samples[:, 1], "o")
         plt.plot(outputs["o0"][:, 0], outputs["o0"][:, 1], "o")
+        plt.plot(samples[:, 0], samples[:, 1], "o")
         plt.savefig("Evoflow_" + str(n_gauss) + "_" + str(seed) + "_" + str(eval_tot) + "_" + str(np.round(mmd_value, decimals=3)) + ".pdf")
         plt.clf()
         np.save("Samples_" + str(n_gauss) + "_" + str(seed) + "_" + str(mmd_value), samples)
     eval_tot += 1
+
     return mmd_value,
 
 
@@ -107,7 +108,7 @@ if __name__ == "__main__":
     x_test = x_test - np.min(x_test, axis=0)
     x_test = x_test / np.max(x_test, axis=0)
     # The GAN evolutive process is a common 2-DNN evolution
-    e = Evolving(loss=gan_train, desc_list=[MLPDescriptor, MLPDescriptor], x_trains=[x_train], y_trains=[x_train], x_tests=[x_test], y_tests=[x_test], evaluation=gan_eval, batch_size=150, population=population, generations=generations, n_inputs=[[2], [z_size]], n_outputs=[[1], [2]], cxp=0.5, mtp=0.5, no_dropout=True, no_batch_norm=True)
+    e = Evolving(loss=gan_train, desc_list=[MLPDescriptor, MLPDescriptor], x_trains=[x_train], y_trains=[x_train], x_tests=[x_test], y_tests=[x_test], evaluation=gan_eval, batch_size=50, population=population, generations=generations, n_inputs=[[2], [z_size]], n_outputs=[[1], [2]], cxp=0.5, mtp=0.5, no_dropout=True, no_batch_norm=True)
     res = e.evolve()
 
     print(res[0])

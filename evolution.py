@@ -30,7 +30,7 @@ class MyContainer(object):
 
 
 class Evolving:
-    def __init__(self, loss="XEntropy", desc_list=(MLPDescriptor, ), complex=False, x_trains=None, y_trains=None, x_tests=None, y_tests=None, evaluation="Accuracy_error", n_inputs=((28, 28)), n_outputs=((10)), batch_size=100, population=20, generations=20, iters=10, lrate=0.01, sel=0, n_layers=10, max_layer_size=100, max_filter=4, max_stride=3, seed=0, cxp=0, mtp=1, no_dropout=False, no_batch_norm=False, evol_kwargs={}, sel_kwargs={}, ev_alg=1, hyperparameters={}):
+    def __init__(self, loss="XEntropy", desc_list=(MLPDescriptor, ), complex=False, x_trains=None, y_trains=None, x_tests=None, y_tests=None, evaluation="Accuracy_error", n_inputs=((28, 28)), n_outputs=((10)), batch_size=100, population=20, generations=20, iters=10, lrate=0.01, sel=0, n_layers=10, max_layer_size=100, max_filter=4, max_stride=3, seed=0, cxp=0, mtp=1, no_dropout=False, no_batch_norm=False, evol_kwargs={}, sel_kwargs={}, ev_alg=1, hyperparameters={}, add_obj=0):
         """
         This is the main class in charge of evolving model descriptors.
         """
@@ -75,12 +75,12 @@ class Evolving:
         self.generations = generations                                  # Number of generations
         self.population_size = population                               # Individuals in a population
         self.ev_hypers = hyperparameters                                # Hyperparameters to be evolved (e.g., optimizer, batch size)
-        self.initialize_deap(sel, sel_kwargs, ev_alg, evol_kwargs, no_batch_norm, no_dropout)      # Initialize DEAP-related matters
+        self.initialize_deap(sel, sel_kwargs, ev_alg, evol_kwargs, no_batch_norm, no_dropout, add_obj)      # Initialize DEAP-related matters
         # Add model saving parameter
 
     def data_save(self, x_trains, y_trains, x_tests, y_tests):
         """
-        Filling the dicts with the training (numpy-like arrays) data
+        Filling the dicts with the training data
         :param x_trains: X data for training
         :param y_trains: y data for training
         :param x_tests: X data for testing
@@ -88,13 +88,20 @@ class Evolving:
         :return: --
         """
 
-        for i, x in enumerate(x_trains):
-            self.train_inputs["i" + str(i)] = x
-            self.train_outputs["o" + str(i)] = y_trains[i]
+        if isinstance(x_trains, dict):
+            self.train_inputs = x_trains
+            self.train_outputs = y_trains
 
-        for i, x in enumerate(x_tests):
-            self.test_inputs["i" + str(i)] = x
-            self.test_outputs["o" + str(i)] = y_tests[i]
+            self.test_inputs = x_tests
+            self.test_outputs = y_tests
+        else:
+            for i, x in enumerate(x_trains):
+                self.train_inputs["i" + str(i)] = x
+                self.train_outputs["o" + str(i)] = y_trains[i]
+
+            for i, x in enumerate(x_tests):
+                self.test_inputs["i" + str(i)] = x
+                self.test_outputs["o" + str(i)] = y_tests[i]
 
     def define_loss_eval(self, loss, evaluation):
         """
@@ -117,7 +124,7 @@ class Evolving:
         else:
             self.evaluation = evaluation
 
-    def initialize_deap(self, sel, sel_kwargs, ev_alg, ev_kwargs, no_batch, no_drop):
+    def initialize_deap(self, sel, sel_kwargs, ev_alg, ev_kwargs, no_batch, no_drop, add_obj):
         """
         Initialize DEAP algorithm
         :param sel: Selection method
@@ -131,7 +138,7 @@ class Evolving:
 
         deap_algs = [algorithms.eaSimple, algorithms.eaMuPlusLambda, algorithms.eaMuCommaLambda, algorithms.eaGenerateUpdate]
 
-        creator.create("Fitness", base.Fitness, weights=[-1.0]*len(self.test_outputs))
+        creator.create("Fitness", base.Fitness, weights=[-1.0]*(len(self.test_outputs) + add_obj))
 
         creator.create("Individual", MyContainer, fitness=creator.Fitness)
 
@@ -329,9 +336,9 @@ def mutations(ev_hypers, max_lay, batch, drop, individual):
     else:
         mutation_types = []
 
-    if batch:
+    if not batch:
         mutation_types = ["batch_norm"] + mutation_types
-    if drop:
+    if not drop:
         mutation_types = ["dropout"] + mutation_types
 
     type_mutation = np.random.choice(mutation_types if len(ev_hypers) > 0 else mutation_types[:-1])
@@ -341,9 +348,16 @@ def mutations(ev_hypers, max_lay, batch, drop, individual):
         lay_dims = np.random.randint(max_lay)+1
         init_w_function = initializations[np.random.randint(len(initializations))]
         init_a_function = activations[np.random.randint(len(activations))]
-        dropout = np.random.randint(0, 2)
-        drop_prob = np.random.rand()
-        batch_norm = np.random.randint(0, 2)
+        if not drop:
+            dropout = np.random.randint(0, 2)
+            drop_prob = np.random.rand()
+        else:
+            dropout = 0
+            drop_prob = 0
+        if not batch:
+            batch_norm = np.random.randint(0, 2)
+        else:
+            batch_norm = 0
 
         network.add_layer(layer_pos, lay_dims, init_w_function, init_a_function, dropout, drop_prob, batch_norm)
 
@@ -408,15 +422,12 @@ def mutations(ev_hypers, max_lay, batch, drop, individual):
         elif network.strides[layer][1] == 1:
             network.change_stride(layer, 2)
     elif type_mutation == "filter_deconv":
-        print(network.output_shapes)
         layer = np.random.randint(0, network.number_hidden_layers)
-        print(network.filters[layer][1], network.output_shapes[-1][1])
+
         if network.filters[layer][1] == 3 and network.output_shapes[-1][1] - 6 >= network.output_dim[1]:
             network.change_filters(layer, 2, np.random.randint(0, 65))
         elif network.filters[layer][1] == 2:
             network.change_filters(layer, 3, np.random.randint(0, 65))
-        print(network.output_shapes)
-        print()
 
     return individual,
 

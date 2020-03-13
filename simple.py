@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
     y_test = OHEnc.fit_transform(np.reshape(y_test, (-1, 1))).toarray()
 
-    e = Evolving(loss="XEntropy", desc_list=[MLPDescriptor], x_trains=[x_train], y_trains=[y_train], x_tests=[x_test], y_tests=[y_test], evaluation="Accuracy_error", n_inputs=[[28, 28]], n_outputs=[[10]], batch_size=150, population=500, generations=100, iters=2000, n_layers=10, max_layer_size=100)
+    e = Evolving(loss="XEntropy", desc_list=[MLPDescriptor], x_trains=[x_train], y_trains=[y_train], x_tests=[x_test], y_tests=[y_test], evaluation="Accuracy_error", n_inputs=[[28, 28]], n_outputs=[[10]], batch_size=150, population=10000, generations=1, iters=1000, n_layers=10, max_layer_size=100)
     a = e.evolve()
-    np.save("simple_res.npy", np.array(ret_evals()))
+    np.save("simple_res_rand.npy", np.array(ret_evals()))
     print(a)

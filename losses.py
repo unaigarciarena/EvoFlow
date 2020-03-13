@@ -289,6 +289,5 @@ def log_quaternion_loss(predictions, labels, params):
   batch_size = params['batch_size']
   logcost = tf.multiply(logcost, 1.0 / batch_size, name='log_quaternion_loss')
   if use_logging:
-    logcost = tf.Print(
-        logcost, [logcost], '[logcost]', name='log_quaternion_loss_print')
+    logcost = tf.Print(logcost, [logcost], '[logcost]', name='log_quaternion_loss_print')
   return logcost
