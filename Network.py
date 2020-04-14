@@ -103,35 +103,38 @@ class MLPDescriptor(NetworkDescriptor):
         super().__init__(number_hidden_layers=number_hidden_layers, input_dim=input_dim, output_dim=output_dim, init_functions=init_functions, act_functions=act_functions, dropout=dropout, batch_norm=batch_norm)
         self.dims = dims  # Number of neurons in each layer
 
-    def random_init(self, input_size, output_size, nlayers, max_layer_size, _, __, no_drop, no_batch):
+    def random_init(self, input_size=None, output_size=None, nlayers=None, max_layer_size=None, _=None, __=None, no_drop=None, no_batch=None):
 
         # If the incoming/outgoing sizes have more than one dimension compute the size of the flattened sizes
-        if hasattr(input_size, '__iter__'):
-            self.input_dim = reduce(lambda x, y: x*y, input_size)
-        else:
-            self.input_dim = input_size
-        if hasattr(output_size, '__iter__'):
-            self.output_dim = reduce(lambda x, y: x*y, output_size)
-        else:
-            self.output_dim = output_size
+        if input_size is not None:
+            if hasattr(input_size, '__iter__'):
+                self.input_dim = reduce(lambda x, y: x*y, input_size)
+            else:
+                self.input_dim = input_size
+        if output_size is not None:
+            if hasattr(output_size, '__iter__'):
+                self.output_dim = reduce(lambda x, y: x*y, output_size)
+            else:
+                self.output_dim = output_size
 
         # Random initialization
-        self.number_hidden_layers = np.random.randint(nlayers)+1
-        self.dims = [np.random.randint(4, max_layer_size)+1 for _ in range(self.number_hidden_layers)]
-        self.init_functions = np.random.choice(initializations, size=self.number_hidden_layers+1)
-        self.act_functions = np.random.choice(activations, size=self.number_hidden_layers+1)
-
-        if no_batch:
-            self.batch_norm = np.zeros(self.number_hidden_layers+1)
-        else:
-            self.batch_norm = np.random.randint(0, 2, size=self.number_hidden_layers+1)
-
-        if no_drop:
-            self.dropout = np.zeros(self.number_hidden_layers+1)
-            self.dropout_probs = np.zeros(self.number_hidden_layers+1)
-        else:
-            self.dropout = np.random.randint(0, 2, size=self.number_hidden_layers+1)
-            self.dropout_probs = np.random.rand(self.number_hidden_layers+1)
+        if nlayers is not None and max_layer_size is not None:
+            self.number_hidden_layers = np.random.randint(nlayers)+1
+            self.dims = [np.random.randint(4, max_layer_size)+1 for _ in range(self.number_hidden_layers)]
+            self.init_functions = np.random.choice(initializations, size=self.number_hidden_layers+1)
+            self.act_functions = np.random.choice(activations, size=self.number_hidden_layers+1)
+        if no_batch is not None:
+            if no_batch:
+                self.batch_norm = np.zeros(self.number_hidden_layers+1)
+            else:
+                self.batch_norm = np.random.randint(0, 2, size=self.number_hidden_layers+1)
+        if no_drop is not None:
+            if no_drop:
+                self.dropout = np.zeros(self.number_hidden_layers+1)
+                self.dropout_probs = np.zeros(self.number_hidden_layers+1)
+            else:
+                self.dropout = np.random.randint(0, 2, size=self.number_hidden_layers+1)
+                self.dropout_probs = np.random.rand(self.number_hidden_layers+1)
 
     def add_layer(self, layer_pos, lay_dims, init_w_function, init_a_function, dropout, drop_prob, batch_norm):
         """

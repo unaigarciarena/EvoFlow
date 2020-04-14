@@ -24,16 +24,17 @@ def xavier_init(fan_in=None, fan_out=None, shape=None, constant=1):
 
 
 init_functions = np.array([xavier_init, tf.random_uniform, tf.random_normal])
-act_functions = np.array([None, tf.nn.relu, tf.nn.elu, tf.nn.softplus, tf.nn.softsign, tf.sigmoid, tf.nn.tanh])
+act_functions = np.array([None, tf.nn.relu, tf.nn.elu, tf.nn.softplus, tf.nn.softsign, tf.sigmoid, tf.nn.tanh, tf.nn.softmax])
 
 
 class MNMDescriptor(object):
-    def __init__(self, max_comp, model_inputs, model_outputs, load=None):
+    def __init__(self, max_comp, model_inputs, model_outputs, load=None, name=""):
         """
         :param max_comp: Number of components allowed in the model
         :param model_inputs: List of inputs of the model (InOut objects)
         :param model_outputs: List of outputs of the model (InOut objects)
         """
+        self.name = name
         if load is not None:
             self.load(load)
         else:
@@ -130,7 +131,7 @@ class MNMDescriptor(object):
 
     def get_net_context(self, net):
         """
-        Given the id of one network, this function returnsthe connections attached to it, and the components at the other sides of said connections
+        Given the id of one network, this function returns the connections attached to it, and the components at the other sides of said connections
         :param net: ID
         :return: Net context
         """
@@ -175,11 +176,11 @@ class MNMDescriptor(object):
         self.last_con += 1
         return name
 
-    def save(self, name):
-
-        if os.path.isfile(name):
-            os.remove(name)
-        f = open(name, "w+")
+    def save(self, path):
+        path = path + "model_" + str(self.name) + ".txt"
+        if os.path.isfile(path):
+            os.remove(path)
+        f = open(path, "w+")
         for ident in self.networks:
             f.write(ident + "_" + self.networks[ident].descriptor.codify_components() + "_" + str(self.networks[ident].taking.size) + "," + self.networks[ident].taking.type + "_" + str(self.networks[ident].producing.size) + "," + self.networks[ident].producing.type + "_" + str(self.networks[ident].depth) + "_" + ",".join(self.reachable[ident]) + "\n")
         f.write("\n")
@@ -191,6 +192,7 @@ class MNMDescriptor(object):
         for ident in self.outputs:
             f.write(ident + "_" + str(self.outputs[ident].taking.size) + "_" + self.outputs[ident].taking.type + "_" + str(self.outputs[ident].depth) + "\n")
         f.write("\n")
+
         for con in self.connections:
             f.write(self.connections[con].codify() + "\n")
 
@@ -213,7 +215,8 @@ class MNMDescriptor(object):
 
         i = 0
         while lines[i] != "\n":
-            ident, n_inp, kind, inp, outp, layers, init, act, kwargs, taking, producing, depth, reachable = lines[i].split("_")
+            ident, n_inp, kind, n_hidden, layers, init, act, cond_rand, taking, producing, depth, reachable = lines[i][:-1].split("_")
+            kwargs = {}
             if int(ident[1:]) > self.last_net:
                 self.last_net = int(ident[1:])
 
@@ -229,7 +232,12 @@ class MNMDescriptor(object):
                     kwargs = kwargs.split("-")
                     kwargs[0] = [int(x) for x in kwargs[0].split(".") if len(x) > 0]
                     kwargs[1] = [int(x) for x in kwargs[1].split(".") if len(x) > 0]
-                desc = network_descriptors[kind](int(inp), int(outp), int(n_inp), len([int(x) for x in layers.split(",")]), [int(x) for x in layers.split(",")], init_functions[[int(x) for x in init.split(",")]],  act_functions[[int(x) for x in act.split(",")]], kwargs)
+                if len(cond_rand) > 0:
+                    cond_rand = cond_rand.split("-")
+                    cond_rand[0] = [int(x) for x in cond_rand[0].split(",") if len(x) > 0]
+                    cond_rand[1] = [int(x) for x in cond_rand[1].split(",") if len(x) > 0]
+                    kwargs["conds"] = cond_rand
+                desc = network_descriptors[kind](int(taking.split(",")[0]), int(producing.split(",")[0]), int(n_inp), int(n_hidden), [int(x) for x in layers.split(",") if x != "-1"], init_functions[[int(x) for x in init.split(",") if x != "-1"]],  act_functions[[int(x) for x in act.split(",") if x != "-1"]], **kwargs)
 
             # print("ident", ident, "n_inp", n_inp, "kind", kind, "inp", inp, "outp", outp, "layers", layers, "init", init, "act", act, "taking", taking, "producing", producing, "depth", depth, "kwargs", kwargs)
             net = NetworkComp(desc, InOut(size=int(taking.split(",")[0]), data_type=taking.split(",")[1]), InOut(data_type=producing.split(",")[1], size=int(producing.split(",")[0])), int(depth))
@@ -266,7 +274,6 @@ class MNMDescriptor(object):
 
             self.connections[name] = Connection(inp, outp, InOut(kind, int(size)), name)
             i += 1
-
     # Getter-like functions
 
     def comp_ids(self):
@@ -338,7 +345,6 @@ class MNMDescriptor(object):
 
     def comp_by_input(self, comp):
         ins = []
-
         for c in self.connections:
             con = self.connections[c]
             if (type(comp) is dict and con.output in comp) or ("str" in type(comp).__name__ and comp == con.output):
@@ -392,17 +398,17 @@ class NetworkDescriptor:
     def change_dimensions_in_layer(self, _, __):  # Defined just in case the user redefines classes and forgets to define this function
         pass
 
-    def network_remove_random_layer(self):
+    def remove_random_layer(self):
         layer_pos = np.random.randint(self.number_hidden_layers)
         self.network_remove_layer(layer_pos)
 
-    def change_activation_fn_in_layer(self, layer_pos, new_act_fn):
+    def change_activation(self, layer_pos, new_act_fn):
         # If not within feasible bounds, return
         if layer_pos < 0 or layer_pos > self.number_hidden_layers:
             return
         self.act_functions[layer_pos] = new_act_fn
 
-    def change_weight_init_fn_in_layer(self, layer_pos, new_weight_fn):
+    def change_weight_init(self, layer_pos, new_weight_fn):
         # If not within feasible bounds, return
         if layer_pos < 0 or layer_pos > self.number_hidden_layers:
             return
@@ -434,35 +440,38 @@ class MLPDescriptor(NetworkDescriptor):
         super().__init__(number_hidden_layers=number_hidden_layers, input_dim=input_dim, output_dim=output_dim, init_fs=init_fs, act_fs=act_fs, dropout=dropout, batch_norm=batch_norm)
         self.dims = dims  # Number of neurons in each layer
 
-    def random_init(self, input_size, output_size, nlayers, max_layer_size, no_drop, no_batch):
+    def random_init(self, input_size=None, output_size=None, nlayers=None, max_layer_size=None, _=None, __=None, no_drop=None, no_batch=None):
 
         # If the incoming/outgoing sizes have more than one dimension compute the size of the flattened sizes
-        if hasattr(input_size, '__iter__'):
-            self.input_dim = reduce(lambda x, y: x*y, input_size)
-        else:
-            self.input_dim = input_size
-        if hasattr(output_size, '__iter__'):
-            self.output_dim = reduce(lambda x, y: x*y, output_size)
-        else:
-            self.output_dim = output_size
+        if input_size is not None:
+            if hasattr(input_size, '__iter__'):
+                self.input_dim = reduce(lambda x, y: x * y, input_size)
+            else:
+                self.input_dim = input_size
+        if output_size is not None:
+            if hasattr(output_size, '__iter__'):
+                self.output_dim = reduce(lambda x, y: x * y, output_size)
+            else:
+                self.output_dim = output_size
 
         # Random initialization
-        self.number_hidden_layers = np.random.randint(nlayers)+1
-        self.dims = [np.random.randint(max_layer_size)+1 for _ in range(self.number_hidden_layers)]
-        self.init_functions = np.random.choice(init_functions, size=self.number_hidden_layers+1)
-        self.act_functions = np.random.choice(act_functions, size=self.number_hidden_layers+1)
-
-        if no_batch:
-            self.batch_norm = np.zeros(self.number_hidden_layers+1)
-        else:
-            self.batch_norm = np.random.randint(0, 2, size=self.number_hidden_layers+1)
-
-        if no_drop:
-            self.dropout = np.zeros(self.number_hidden_layers+1)
-            self.dropout_probs = np.zeros(self.number_hidden_layers+1)
-        else:
-            self.dropout = np.random.randint(0, 2, size=self.number_hidden_layers+1)
-            self.dropout_probs = np.random.rand(self.number_hidden_layers+1)
+        if nlayers is not None and max_layer_size is not None:
+            self.number_hidden_layers = np.random.randint(nlayers) + 1
+            self.dims = [np.random.randint(4, max_layer_size) + 1 for _ in range(self.number_hidden_layers)]
+            self.init_functions = np.random.choice(init_functions, size=self.number_hidden_layers + 1)
+            self.act_functions = np.random.choice(act_functions, size=self.number_hidden_layers + 1)
+        if no_batch is not None:
+            if no_batch:
+                self.batch_norm = np.zeros(self.number_hidden_layers + 1)
+            else:
+                self.batch_norm = np.random.randint(0, 2, size=self.number_hidden_layers + 1)
+        if no_drop is not None:
+            if no_drop:
+                self.dropout = np.zeros(self.number_hidden_layers + 1)
+                self.dropout_probs = np.zeros(self.number_hidden_layers + 1)
+            else:
+                self.dropout = np.random.randint(0, 2, size=self.number_hidden_layers + 1)
+                self.dropout_probs = np.random.rand(self.number_hidden_layers + 1)
 
     def add_layer(self, layer_pos, lay_dims, init_w_function, init_a_function, dropout, drop_prob, batch_norm):
         """
@@ -488,9 +497,11 @@ class MLPDescriptor(NetworkDescriptor):
 
         # Finally the number of hidden layers is updated
         self.number_hidden_layers = self.number_hidden_layers + 1
-        self.batch_norm = np.insert(self.batch_norm, layer_pos, batch_norm)
-        self.dropout = np.insert(self.dropout, layer_pos, dropout)
-        self.dropout_probs = np.insert(self.dropout_probs, layer_pos, drop_prob)
+        if not (isinstance(self.batch_norm, tuple) or self.batch_norm.shape[0] == 0):
+            self.batch_norm = np.insert(self.batch_norm, layer_pos, batch_norm)
+        if not (isinstance(self.dropout, tuple) or self.dropout.shape[0] == 0):
+            self.dropout = np.insert(self.dropout, layer_pos, dropout)
+            self.dropout_probs = np.insert(self.dropout_probs, layer_pos, drop_prob)
 
     def remove_layer(self, layer_pos):
         """
@@ -523,10 +534,12 @@ class MLPDescriptor(NetworkDescriptor):
         # Finally the number of hidden layers is updated
         self.number_hidden_layers = self.number_hidden_layers - 1
 
-    def change_layer_dimension(self, layer_pos, new_dim):
+    def change_layer_dimension(self, layer_pos, new_dim=-1):
         # If not within feasible bounds, return
         if layer_pos < 0 or layer_pos > self.number_hidden_layers:
             return
+        if new_dim == -1:
+            new_dim = np.random.randint(5, 100)
         # If the dimension of the layer is identical to the existing one, return
         self.dims[layer_pos] = new_dim
 
@@ -536,28 +549,28 @@ class MLPDescriptor(NetworkDescriptor):
         print(identifier, ' Init:', self.init_functions)
         print(identifier, ' Act:', self.act_functions)
 
-    def codify_components(self, max_hidden_layers, ref_list_init_functions, ref_list_act_functions):
+    def codify_components(self, max_hidden_layers=10, ref_list_init_functions=init_functions, ref_list_act_functions=act_functions):
 
         max_total_layers = max_hidden_layers + 1
         # The first two elements of code are the number of layers and number of loops
-        code = [self.number_hidden_layers]
+        code = [[self.number_hidden_layers]]
 
         # We add all the layer dimension and fill with zeros all positions until max_layers
-        code = code + self.dims + [-1]*(max_total_layers-len(self.dims))
+        code = code + [list(self.dims) + [-1]*(max_total_layers-len(self.dims))]
 
         # We add the indices of init_functions in each layer
         # and fill with zeros all positions until max_layers
         aux_f = []
         for init_f in self.init_functions:
-            aux_f.append(ref_list_init_functions.index(init_f))
-        code = code + aux_f + [-1]*(max_total_layers-len(aux_f))
+            aux_f.append(list(ref_list_init_functions).index(init_f))
+        code = code + [aux_f + [-1]*(max_total_layers-len(aux_f))]
 
         # We add the indices of act_functions in each layer
         # and fill with zeros all positions until max_layers
         aux_a = []
         for act_f in self.act_functions:
-            aux_a.append(ref_list_act_functions.index(act_f))
-        code = code + aux_a + [-1]*(max_total_layers-len(aux_a))
+            aux_a.append(list(ref_list_act_functions).index(act_f))
+        code = code + [aux_a + [-1]*(max_total_layers-len(aux_a))]
 
         return code
 
@@ -795,36 +808,36 @@ class ConvolutionDescriptor(ConvDescriptor):
         return str(self.n_inputs) + "_" + type(self).__name__[:-10] + "_" + self.codify_components() + "_"
 
 
-class GenericDescriptor(NetworkDescriptor):
-    def __init__(self, inp, outp, n_inputs, n_hidden, dims, inits, acts, _):
+class GenericDescriptor(MLPDescriptor):
+    def __init__(self, inp, outp, n_inputs, n_hidden, dims, inits, acts):
         acts = np.append(acts[:-1], [None])
-        super().__init__(n_inputs=n_inputs, number_hidden_layers=n_hidden, input_dim=inp, output_dim=outp, init_fs=inits, act_fs=acts)
+        super().__init__(number_hidden_layers=n_hidden, input_dim=inp, output_dim=outp, init_fs=inits, act_fs=acts)
         self.dims = dims
 
-    def codify_components(self):
-        return str(self.n_inputs) + "_" + type(self).__name__[:-10] + "_" + super().codify_components() + "_"
+    def codify_components(self, max_hidden_layers=10, ref_list_init_functions=init_functions, ref_list_act_functions=act_functions):
+        return str(self.n_inputs) + "_" + type(self).__name__[:-10] + "_" + "_".join([str(",".join(str(y) for y in x)) for x in super().codify_components()]) + "_"
 
 
-class DiscreteDescriptor(NetworkDescriptor):
-    def __init__(self, inp, outp, n_inputs, n_hidden, dims, inits, acts, _):
+class DiscreteDescriptor(MLPDescriptor):
+    def __init__(self, inp, outp, n_inputs, n_hidden, dims, inits, acts):
         acts = np.append(acts[:-1], [tf.nn.softmax])
-        super().__init__(n_inputs=n_inputs, number_hidden_layers=n_hidden, input_dim=inp, output_dim=outp, init_fs=inits, act_fs=acts)
+        super().__init__(number_hidden_layers=n_hidden, input_dim=inp, output_dim=outp, init_fs=inits, act_fs=acts)
         self.dims = dims
 
-    def codify_components(self):
-        return str(self.n_inputs) + "_" + type(self).__name__[:-10] + "_" + super().codify_components() + "_"
+    def codify_components(self, max_hidden_layers=10, ref_list_init_functions=init_functions, ref_list_act_functions=act_functions):
+        return str(self.n_inputs) + "_" + type(self).__name__[:-10] + "_" + "_".join([str(",".join(str(y) for y in x)) for x in super().codify_components()]) + "_"
 
 
-class DecoderDescriptor(NetworkDescriptor):
+class DecoderDescriptor(MLPDescriptor):
     def __init__(self, inp, outp, n_inputs, n_hidden, dims, inits, acts, conds):
-        super().__init__(n_inputs=n_inputs, number_hidden_layers=n_hidden, input_dim=inp, output_dim=outp, init_fs=inits, act_fs=acts)
+        super().__init__(number_hidden_layers=n_hidden, input_dim=inp, output_dim=outp, init_fs=inits, act_fs=acts)
         self.dims = dims
 
         self.conds = conds[0]
         self.rands = conds[1]
 
-    def codify_components(self):
-        return str(self.n_inputs) + "_" + type(self).__name__[:-10] + "_" + super().codify_components() + "_" + ".".join([str(x) for x in self.conds]) + "-" + ".".join([str(x) for x in self.rands])
+    def codify_components(self, max_hidden_layers=10, ref_list_init_functions=init_functions, ref_list_act_functions=act_functions):
+        return str(self.n_inputs) + "_" + type(self).__name__[:-10] + "_" + "_".join([str(",".join(str(y) for y in x)) for x in super().codify_components()]) + "_" + ",".join([str(x) for x in self.conds]) + "-" + ",".join([str(x) for x in self.rands])
 
 
 class ConvDecoderDescriptor(ConvDescriptor):

@@ -133,6 +133,7 @@ class Evolving:
         :param ev_kwargs: Hyperparameters for the EA, e.g., mutation or crossover probability.
         :param no_batch: Whether the evolutive process includes batch normalization in the networks or not
         :param no_drop: Whether the evolutive process includes dropout in the networks or not
+        :param add_obj: Number of additional objectives
         :return: --
         """
 
@@ -317,6 +318,10 @@ class Evolving:
 def mutations(ev_hypers, max_lay, batch, drop, individual):
     """
     Mutation operators for individuals. They can affect any network or the hyperparameters.
+    :param ev_hypers:
+    :param max_lay:
+    :param batch:
+    :param drop:
     :param individual: DEAP individual. Contains a dict where the keys are the components of the model
     :return: Mutated version of the DEAP individual.
     """

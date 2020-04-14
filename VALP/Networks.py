@@ -12,6 +12,10 @@ class Network:
         self.descriptor = network_descriptor
         self.List_layers = []
         self.List_weights = []
+        self.w_assigns = []
+        self.w_phs = []
+        self.b_assigns = []
+        self.b_phs = []
 
     def reset_network(self):
         self.List_layers = []
@@ -40,16 +44,22 @@ class MLP(Network):
 
         self.create_hidden_layer(self.descriptor.dims[self.descriptor.number_hidden_layers-1], self.descriptor.output_dim, self.descriptor.init_functions[self.descriptor.number_hidden_layers], str(self.descriptor.number_hidden_layers))
 
-    def building(self, layer, load):
+    def building(self, layer, load, path):
 
         if load:
-            self.load_weights()
+            self.load_weights(path)
         else:
             self.initialization()
 
         for lay in range(self.descriptor.number_hidden_layers+1):
             act = self.descriptor.act_functions[lay]
             layer = tf.matmul(layer, self.List_weights[lay]) + self.List_bias[lay]
+
+            self.w_phs += [tf.placeholder("float32", shape=self.List_weights[lay].shape)]
+            self.w_assigns += [tf.assign(self.List_weights[lay], self.w_phs[-1])]
+
+            self.b_phs += [tf.placeholder("float32", shape=self.List_bias[lay].shape)]
+            self.b_assigns += [tf.assign(self.List_bias[lay], self.b_phs[-1])]
 
             if lay in self.descriptor.batch_norm:
                 layer = tf.layers.batch_normalization(layer)
@@ -72,9 +82,10 @@ class MLP(Network):
             tensors[self.id + "-B-" + str(ind)] = var
         return tensors
 
-    def load_weights(self, path="/home/unai/Escritorio/MultiNetwork/"):
-        if os.path.isfile(path + str(self.id) + ".npy"):
-            self.List_weights, self.List_bias = np.load(str(self.id) + ".npy")
+    def load_weights(self, path=""):
+
+        if os.path.isfile(path):
+            self.List_weights, self.List_bias = np.load(path, allow_pickle=True)
 
             for i in range(len(self.List_weights)):
                 self.List_weights[i] = tf.Variable(self.List_weights[i])
@@ -113,11 +124,11 @@ class MLP(Network):
         else:
             self.initialization()
 
-    def save_weights(self, sess):
+    def save_weights(self, sess, path):
         ws = sess.run(self.List_weights)
         bs = sess.run(self.List_bias)
 
-        np.save(self.id, [ws, bs], allow_pickle=True)
+        np.save(path + str(self.id) + ".npy", [ws, bs], allow_pickle=True)
 
 
 class CNN(Network):
@@ -181,11 +192,10 @@ class Decoder(MLP):
         self.z_log_sigma_sq = None
         self.z_mean = None
 
-    def building(self, inputs, load):
+    def building(self, inputs, load, path):
 
         z = []
         cond = []
-
         for i in range(len(inputs)):
             if i in self.descriptor.rands:  # This contains the indices of the decoder inputs that are deleted when sampling
                 z += [tf.layers.flatten(inputs[i])]
@@ -204,9 +214,7 @@ class Decoder(MLP):
         z_samples_cond = tf.concat([z_samples] + cond, axis=1)
         self.descriptor.input_dim = z_samples_cond.shape[1].value
 
-        super().initialization()
-
-        super().building(z_samples_cond, load)
+        super().building(z_samples_cond, load, path)
 
 
 class ConvDecoder(Network):  # Not tested, code is very similar to common decoder
@@ -220,7 +228,7 @@ class Generic(MLP):
         super().__init__(descriptor, ident)
         self.x = None
 
-    def building(self, inputs, load):
+    def building(self, inputs, load, path=""):
 
         for inpt in range(len(inputs)):
             inputs[inpt] = tf.layers.flatten(inputs[inpt])
@@ -228,9 +236,7 @@ class Generic(MLP):
 
         self.descriptor.input_dim = self.x.shape[1].value
 
-        super().initialization()
-
-        super().building(self.x, load)
+        super().building(self.x, load, path)
 
 
 class Discrete(MLP):
@@ -238,7 +244,7 @@ class Discrete(MLP):
         super().__init__(descriptor, ident)
         self.x = None
 
-    def building(self, inputs, load):
+    def building(self, inputs, load, path=""):
 
         for inpt in range(len(inputs)):
             inputs[inpt] = tf.layers.flatten(inputs[inpt])
@@ -246,7 +252,7 @@ class Discrete(MLP):
 
         self.descriptor.input_dim = self.x.shape[1].value
 
-        super().building(self.x, load)
+        super().building(self.x, load, path)
 
 
 class CNN(object):
@@ -345,7 +351,7 @@ def generic_descriptor(input_dim, output_dim):
     generic_act_functions = np.random.choice(act_functions, size=n_hidden+1)
     generic_act_functions[n_hidden] = None
 
-    return GenericDescriptor(input_dim, output_dim, 0, n_hidden, dim_list, generic_init_functions,  generic_act_functions, 0)
+    return GenericDescriptor(input_dim, output_dim, 0, n_hidden, dim_list, generic_init_functions,  generic_act_functions)
 
 
 def convolutional_descriptor(input_dim, output_dim, previous, model_ins):
@@ -359,7 +365,7 @@ def convolutional_descriptor(input_dim, output_dim, previous, model_ins):
     sizes = np.concatenate((np.random.randint(2, 4, size=(layers.shape[0], 2)), np.random.randint(1, 3, size=(layers.shape[0], 1))), axis=1)
     strides = np.random.randint(1, 2, size=layers.shape[0])
 
-    return ConvolutionDescriptor(input_dim, output_dim, 0, layers, filters, strides, sizes, act, init, 0)
+    return ConvolutionDescriptor(input_dim, output_dim, 0, layers, filters, strides, sizes, act, init)
 
 
 def conv_dec_descriptor(in_dim, out_dim):
@@ -400,4 +406,4 @@ def discrete_descriptor(input_dim, output_dim):
     generic_act_functions = np.random.choice(act_functions, size=n_hidden+1)
     generic_act_functions[n_hidden] = tf.nn.softmax
 
-    return DiscreteDescriptor(input_dim, output_dim, 0, n_hidden, dim_list, generic_init_functions,  generic_act_functions, 0)
+    return DiscreteDescriptor(input_dim, output_dim, 0, n_hidden, dim_list, generic_init_functions,  generic_act_functions)

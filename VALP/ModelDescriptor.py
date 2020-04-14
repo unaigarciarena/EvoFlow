@@ -74,7 +74,7 @@ def complete_model(model, conv_prob):
     return model
 
 
-def recursive_creator(model, depth, conv_prob):  # Main recursive function
+def recursive_creator(model, depth, conv_prob, seed=0):  # Main recursive function
     """
     This function takes an (presumably) empty model and returns a VVC
     :param model: Empty model
@@ -82,6 +82,9 @@ def recursive_creator(model, depth, conv_prob):  # Main recursive function
     :param conv_prob: Probability of adding a C-Decoder instead of a MLP-Decoder
     :return: VVC
     """
+
+    np.random.seed(seed)
+    random.seed(seed)
 
     model.constructed = True
 

@@ -8,18 +8,18 @@ We use the MobileNet model instead of Inception because it gave better accuracy 
 import numpy as np
 from evolution import Evolving
 import argparse
-from VALP.ModelDescriptor import MNMDescriptor, recursive_creator
+from VALP.ModelDescriptor import MNMDescriptor, recursive_creator, fix_in_out_sizes
 from VALP.evolution import diol
 from VALP.small_improvements import bypass, del_con, add_con, divide_con, load_model
 from deap import algorithms
 from deap import base
 from deap import creator
 from deap import tools
-from scipy import misc
 from metrics import mse, accuracy_error
 from VALP.Model_Building import MNM
 from Network import initializations, activations
 from PIL import Image
+import tensorflow as tf
 
 
 class MyContainer(object):
@@ -87,9 +87,9 @@ def inception_score(images):
 
 
 class EvoVALP(Evolving):
-    def __init__(self, desc=MNMDescriptor, x_trains=None, y_trains=None, x_tests=None, y_tests=None, evaluation={"o0": accuracy_error, "o1": mse, "o2": inception_score},
+    def __init__(self, desc=MNMDescriptor, x_trains=None, y_trains=None, x_tests=None, y_tests=None, evaluation={"o0": mse, "o1": accuracy_error, "o2": inception_score},
                  batch_size=100, population=20, generations=20, iters=10, lrate=0.01, sel=0, n_layers=10, max_layer_size=100, max_net=10, max_con=15,
-                 seed=0, cxp=0, mtp=1, no_dropout=False, no_batch_norm=False, evol_kwargs={}, sel_kwargs={}, ev_alg=3, hyperparameters={}, add_obj=0):
+                 seed=0, cxp=0, mtp=1, no_dropout=True, no_batch_norm=True, evol_kwargs={}, sel_kwargs={}, ev_alg=3, hyperparameters={}, add_obj=0):
         """
         This is the main class in charge of evolving model descriptors.
         """
@@ -107,6 +107,9 @@ class EvoVALP(Evolving):
         self.initialize_deap(sel, sel_kwargs, ev_alg, evol_kwargs, no_batch_norm, no_dropout, add_obj)  # Initialize DEAP-related matters
         self.max_net = max_net
         self.max_con = max_con
+        self.population = None
+        self.no_batch = no_batch_norm
+        self.no_drop = no_dropout
 
         self.accs = []
         self.mses = []
@@ -128,21 +131,15 @@ class EvoVALP(Evolving):
         :param add_obj: The number of objectives to be optimized apart from the network performance
         :return: --
         """
-
         deap_algs = [algorithms.eaSimple, algorithms.eaMuPlusLambda, algorithms.eaMuCommaLambda, algorithms.eaGenerateUpdate]
 
         creator.create("Fitness", base.Fitness, weights=[-1.0] * (len(self.test_outputs) + add_obj))
 
         creator.create("Individual", MyContainer, fitness=creator.Fitness)
 
-        self.toolbox.register("individual", self.init_individual, creator.Individual, no_batch, no_drop)
-        self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
-
         self.toolbox.register("evaluate", self.eval_individual)
         self.toolbox.register("generate", self.generate, creator.Individual)
         self.toolbox.register("update", self.update)
-
-        sel_methods = [tools.selBest, tools.selTournament, tools.selNSGA2]
 
         if len(ev_kwargs) == 0:
             if ev_alg == 0:
@@ -152,7 +149,7 @@ class EvoVALP(Evolving):
             if ev_alg == 2:
                 self.evol_kwargs = {"mu": self.population_size, "lambda_": self.population_size, "cxpb": self.cXp, "mutpb": self.mtp, "ngen": self.generations, "verbose": 1}
             if ev_alg == 3:
-                self.evol_kwargs = {"cxpb": self.cXp, "mutpb": self.mtp, "ngen": self.generations, "verbose": 1}
+                self.evol_kwargs = {"ngen": self.generations, "verbose": 1}
         self.ev_alg = deap_algs[ev_alg]
 
     def evolve(self):
@@ -203,10 +200,11 @@ class EvoVALP(Evolving):
         model.epoch_train(hypers["btch_sz"], 400, 0)
 
         a = model.predict(self.test_inputs, [], new=True)[0]
+        m2e = np.mean(self.evaluation["o0"](a["o0"], self.test_outputs["o0"]))
 
-        acc = self.evaluation["o1"](a["o1"], np.argmax(self.test_outputs["o1"], axis=1))
-        m2e = self.evaluation["o0"](a["o0"], self.test_outputs["o0"])
-        i_d = -self.evaluation["o2"](a["o2"])
+        acc = np.mean(self.evaluation["o1"](a["o1"][:, 0], np.argmax(self.test_outputs["o1"], axis=1)))
+        i_d = -np.mean(self.evaluation["o2"](a["o2"]))
+        tf.reset_default_graph()
         del model
 
         return acc, m2e, i_d
@@ -227,31 +225,41 @@ class EvoVALP(Evolving):
         self.mse_args = np.argsort(self.mses)
         self.id_args = np.argsort(self.ids)
 
-    def generate(self, init_ind, population):
+        self.population = population
 
-        new_pop = tools.selNSGA2(population, self.population_size)
+    def generate(self, init_ind):
 
-        for i in range(len(new_pop)):
-            decision = np.random.rand()
-            if decision < self.cXp:
-                c_output = np.argmax([self.acc_args, self.mse_args, self.id_args])
-                #print(c_output)
-            elif decision < self.cXp + self.mtp:
-                new_pop[i] = init_ind(mutation(new_pop[i], np.argmin([self.acc_args, self.mse_args, self.id_args]), self.ev_hypers, self.max_net, self.max_con, self.max_lay))
+        if self.population is not None:
+
+            new_pop = tools.selNSGA2(self.population, self.population_size)
+
+            for i in range(len(new_pop)):
+                decision = np.random.rand()
+                if decision < self.cXp:
+                    c_output = np.argmax([self.acc_args, self.mse_args, self.id_args])
+                    #print(c_output)
+                elif decision < self.cXp + self.mtp:
+                    new_pop[i] = init_ind(mutation(new_pop[i], np.argmin([self.acc_args, self.mse_args, self.id_args]), self.ev_hypers, self.max_net, self.max_con, self.max_lay, self.no_drop, self.no_batch))
+        else:
+            new_pop = [self.init_individual(init_ind, self.no_batch, self.no_drop) for _ in range(self.population_size)]
 
         return new_pop
 
 
 def mutation(individual, safe, ev_hypers, max_net, max_con, max_lay, drop=False, norm=False):
-    desc, hypers = individual
+    desc, hypers = individual.descriptor
     assert isinstance(desc, MNMDescriptor)
     decision = np.random.rand()
     if decision < 1/3:
         hypers = hyper_mutation(hypers, ev_hypers)
     elif decision < 2/3:
-        desc = structure_mutation(max_net, max_con, desc, safe)
+        structure_mutation(max_net, max_con, desc, safe)
     else:
-        desc.networks[np.random.choice(desc.networks)] = network_mutation(max_lay, drop, norm, desc.networks[np.random.choice(desc.networks)])
+        net = np.random.choice(list(desc.networks.keys()))
+        desc.networks[net].descriptor = network_mutation(max_lay, drop, norm, desc.networks[net].descriptor)
+
+    fix_in_out_sizes(desc)
+
     return desc, hypers
 
 
@@ -274,9 +282,9 @@ def structure_mutation(max_net, max_con, valp, safe, mutations=["del_conn", "del
         return result
 
     assert isinstance(valp, MNMDescriptor)
-    if len(valp.connections) >= max_con and "add_conn" in mutations:
+    if len(valp.connections) >= max_con and ["add_conn"] in mutations:
         mutations = mutations.remove("add_conn")
-    if len(valp.networks) >= max_net and "add_comp" in mutations:
+    if len(valp.networks) >= max_net and ["add_comp"] in mutations:
         mutations += mutations.remove("add_comp")
 
     mut = np.random.choice(mutations)
@@ -407,7 +415,6 @@ def network_mutation(max_lay, batch, drop, network):
         elif network.filters[layer][1] == 2:
             network.change_filters(layer, 3, np.random.randint(0, 65))
 
-
     return network
 
 
@@ -444,7 +451,7 @@ if __name__ == "__main__":
     # The GAN evolutive process is a common 2-DNN evolution
     hyps = {"btch_sz": [100, 150, 200], "wo0": [0.1, 0.5, 1], "wo1": [0.1, 0.5, 1], "wo2": [0.1, 0.5, 1]}
 
-    e = EvoVALP(x_trains=data_inputs["Train"], y_trains=data_outputs["Train"], x_tests=data_inputs["Test"], y_tests=data_outputs["Test"], hyperparameters=hyps)
+    e = EvoVALP(x_trains=data_inputs["Train"], y_trains=data_outputs["Train"], x_tests=data_inputs["Test"], y_tests=data_outputs["Test"], population=pop, generations=generations, hyperparameters=hyps)
     res = e.evolve()
 
     print(res[0])

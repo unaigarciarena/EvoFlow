@@ -87,7 +87,31 @@ def divide_con(desc, safe, con=""):
             nets = set(inp_nets).intersection(set(out_nets))
 
             desc.connections[con] = c
+    else:
+        c = desc.pop_con(con)
+        inp_comp = desc.comp_by_ind(c.input)
+        out_comp = desc.comp_by_ind(c.output)
+        if inp_comp.type == "Model":
+            inp = [inp_comp.producing.type]
+        else:
+            inp = nets_produce[type(inp_comp.descriptor)]
 
+        if out_comp.type == "Model":
+            out = [out_comp.taking.type]
+        else:
+            out = nets_require[type(out_comp.descriptor)]
+
+        inp_nets = []
+        out_nets = []
+        for kind in inp:
+            inp_nets += types_come_from[kind]
+
+        for kind in out:
+            out_nets += types_go_to[kind]
+
+        nets = set(inp_nets).intersection(set(out_nets))
+
+        desc.connections[con] = c
     if len(nets) == 0:
         return -1
 

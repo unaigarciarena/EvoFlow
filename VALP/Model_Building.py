@@ -7,7 +7,6 @@ from sklearn.metrics import accuracy_score, mean_squared_error
 import tensorflow as tf
 import numpy as np
 import random
-import os
 import matplotlib.pyplot as plt
 from functools import reduce
 import time
@@ -15,16 +14,29 @@ from datetime import timedelta
 
 network_types = {"Decoder": Decoder, "Generic": Generic, "Discrete": Discrete, "Convolution": CNN, "ConvDecoder": ConvDecoder}
 
+opts = [tf.train.AdamOptimizer, tf.train.AdagradOptimizer, tf.train.AdadeltaOptimizer, tf.train.GradientDescentOptimizer, tf.train.RMSPropOptimizer]
+
 
 class MNM(object):
     """
     Tensorflow level implementation of the VALP
     """
-    def __init__(self, descriptor, batch_size, inputs, outputs, loss_func_weights, load=None, init=True):
+    def __init__(self, descriptor, batch_size, inputs, outputs, loss_func_weights, name="", load=None, init=True, lr=0.01, opt=0, random_seed=None):
 
-        if load or descriptor.constructed:
-            self.descriptor = descriptor
-        else:
+        if random_seed is not None:
+            np.random.seed(random_seed)
+            tf.random.set_random_seed(random_seed)
+            random.seed(random_seed)
+
+        self.name = name
+
+        self.descriptor = descriptor
+        if load is not None:
+            if isinstance(load, str):
+                self.descriptor.load(load + "model_" + name + ".txt")
+            else:
+                self.descriptor.load("model_" + name + ".txt")
+        elif not descriptor.constructed:
             self.descriptor = recursive_creator(descriptor, 0, 0)  # Create a new descriptor if it is empty and not loaded
 
         self.inputs = {}  # ID: placeholder
@@ -33,9 +45,11 @@ class MNM(object):
         self.predictions = {}  # ID: Data (where the result is placed, what has to be sess.run-ed)
         self.input_data = {}  # ID: Data (numpy data, from which learning is done)
         self.output_data = {}  # ID: DAta (numpy data, from which learning is done)
+        self.lr = lr
+        self.opt = opt
 
         self.initialized = []  # List of initialized components (to know what to build, when recursively creating tf DNNs)
-        self.sess = tf.Session()
+        self.sess = tf.Session()  # config=tf.ConfigProto(device_count={'GPU': 0})
         self.optimizer = None  # To be sess.run-ed to train all the objectives of the VALP
         self.optimizer_samp = None  # To be sess.run-ed to train only the sampling output (VAE does multiple training for each data piece)
         self.loss_function = 0  # General loss function
@@ -54,11 +68,11 @@ class MNM(object):
         for outp in descriptor.outputs:
             self.add_output(outputs[outp], outp)
 
-        if init is True:  # If the tf variables have to be initialized (most of the times)
+        if init:  # If the tf variables have to be initialized (most of the times)
             if load is not None:  # If the weights have to be loaded
                 if "str" in type(load).__name__:  # specific path
                     self.load(load)
-                elif load is True:  # or default
+                elif load:  # or default
                     self.load("/")
             else:
                 self.initialize(load)  # Random initialization
@@ -89,21 +103,21 @@ class MNM(object):
         else:
             return None
 
-    def initialize(self, load):
+    def initialize(self, load, load_path=""):
         """
         This function calls recursive_init, which either initializes or loads the tf weights, and constructs the different loss functions
         :param load: Whether the weights have to be loaded or can be randomly initialized
+        :param load_path: Path from which info has to be loaded
         :return: --
         """
         aux_pred = {}
 
-        self.recursive_init(self.descriptor.comp_by_input(self.descriptor.outputs), aux_pred, load)  # Weight initialization
+        self.recursive_init(self.descriptor.comp_by_input(self.descriptor.outputs), aux_pred, load, load_path)  # Weight initialization
 
         self.loss_function = 0
         self.loss_function_sample = 0
 
         # ### Loss function initialization
-
         for pred in self.predictions.keys():
             if self.descriptor.outputs[pred].taking.type == "discrete":  # If this fails, it is being initialized twice
                 self.sub_losses[pred] = self.loss_weights[pred] * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.predictions[pred], labels=self.outputs[pred]))
@@ -121,12 +135,12 @@ class MNM(object):
 
         for network in self.descriptor.networks:
             if "Decoder" in type(self.descriptor.comp_by_ind(network).descriptor).__name__:
-                self.sub_losses[network] = -0.0005 * tf.reduce_sum(1 + self.components[network].z_log_sigma_sq - tf.square(self.components[network].z_mean) - tf.exp(self.components[network].z_log_sigma_sq))
+                self.sub_losses[network] = -0.00001 * tf.reduce_mean(1 + self.components[network].z_log_sigma_sq - tf.square(self.components[network].z_mean) - tf.exp(self.components[network].z_log_sigma_sq))
                 self.loss_function += self.sub_losses[network]
                 self.loss_function_sample += self.sub_losses[network]
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss_function)
-        self.optimizer_samp = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss_function_sample)
+        self.optimizer = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function)
+        self.optimizer_samp = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function_sample)
         self.sess.run(tf.compat.v1.global_variables_initializer())
 
     def epoch_train(self, batch_size, epochs, sync, display_step=1):
@@ -152,21 +166,19 @@ class MNM(object):
             for i in self.components:
                 if not np.isfinite(self.sess.run(self.components[i].result, feed_dict=feed_dict)).all():
                     print(epoch, i)
-            for _ in range(sync):
-                _, partial_loss = self.sess.run([self.optimizer_samp, self.loss_function_sample], feed_dict=feed_dict)  # Sampling training
-
+            _, partial_loss = self.sess.run([self.optimizer, self.loss_function], feed_dict=feed_dict)
             if epoch % display_step == 1:
                 print(epoch, partial_loss)
         return partial_loss
 
-    def convergence_train(self, batch_size, conv, conv_param, epoch_lim, test, sync, display_step=1):
+    def convergence_train(self, batch_size, conv, conv_param, proportion=0.7, epoch_lim=1000, sync=0, display_step=-1):
         """
         Train by convergence. When the loss is was smaller 'n' iterations ago than currently, training is stopped. Also has a epoch limit
         :param batch_size: Self explanatory
         :param conv: Epochs to take into account when deciding whether training has converged or not, 'n'
         :param conv_param: flexibility multiplier to allow larger or shorter convergence criterion
+        :param proportion: proportion to divide train and test sets
         :param epoch_lim: Training also has to be limited by an epoch limit
-        :param test: data with which convergence is tested
         :param sync: Times the sampling loss function is trained each epoch (VAEs are trained several times with the same input)
         :param display_step: verbose
         :return:
@@ -175,18 +187,23 @@ class MNM(object):
         epoch = 0
         aux_ind = 0
         test_dict = {}
+        train_dict = {}
         for inp in self.inputs:
-            test_dict[self.inputs[inp]] = test[inp]
+
+            test_dict[self.inputs[inp]] = self.input_data[inp][int(self.input_data[inp].shape[0]*proportion):]
+            train_dict[self.inputs[inp]] = self.input_data[inp][:int(self.input_data[inp].shape[0]*proportion)]
         for output in self.outputs:
-            test_dict[self.outputs[output]] = test[output]
+            test_dict[self.outputs[output]] = self.output_data[output][int(self.output_data[output].shape[0]*proportion):]
+            train_dict[self.outputs[output]] = self.output_data[output][:int(self.output_data[output].shape[0]*proportion)]
+
         while True:
             feed_dict = {}
 
             for inp in self.inputs:
-                feed_dict[self.inputs[inp]] = batch(self.input_data[inp], batch_size, aux_ind)
+                feed_dict[self.inputs[inp]] = batch(train_dict[self.inputs[inp]], batch_size, aux_ind)
 
             for output in self.outputs:
-                feed_dict[self.outputs[output]] = batch(self.output_data[output], batch_size, aux_ind)
+                feed_dict[self.outputs[output]] = batch(train_dict[self.outputs[output]], batch_size, aux_ind)
 
             aux_ind = (aux_ind + batch_size) % self.example_num
             for _ in range(sync):
@@ -195,8 +212,9 @@ class MNM(object):
             _, partial_loss = self.sess.run([self.optimizer, self.loss_function], feed_dict=feed_dict)  # Normal training
 
             last_res[1:] = last_res[:-1]
-            last_res[0] = self.sess.run(self.loss_function, test_dict)
-            if epoch % display_step == 1:
+            last_res[0], p1 = self.sess.run([self.loss_function, self.predictions["o1"]], test_dict)
+
+            if epoch % display_step == 0:
                 print(epoch, last_res[0])
 
             epoch += 1
@@ -235,7 +253,7 @@ class MNM(object):
 
         return self.sess.run([self.predictions] + intra, feed_dict=feed_dict)
 
-    def recursive_init(self, comps, aux_pred, load):
+    def recursive_init(self, comps, aux_pred, load, load_path=""):
         """
         This function initializes the tensorflow graph. It initializes the components by levels. They graph initialization is
         performed as a depth-first algorithm. The principal call to the function requires the initialization of the components
@@ -245,6 +263,7 @@ class MNM(object):
         :param comps: Components on which the initialization starts
         :param aux_pred: Unused
         :param load: whether to load network weights or not
+        :param load_path: path from which the info is loaded
         :return: The tf graph is initialized
         """
 
@@ -253,18 +272,20 @@ class MNM(object):
             if comp not in self.initialized and "i" not in comp:  # If it is not already in the tf model, or is an input
                 self.initialized += [comp]  # Save as initialized
                 comps_below = self.descriptor.comp_by_input(comp)  # Get all the components on which comp depends
-                self.recursive_init(comps_below, aux_pred, load)  # Initialize them
+                self.recursive_init(comps_below, aux_pred, load, load_path)  # Initialize them
+
                 net = self.descriptor.comp_by_ind(comp)  # Get the tf structure of comp
 
                 aux_input = []
 
                 for comp_below in comps_below:  # For each component on which comp depends
                     aux_input += [self.component_output_by_id(comp_below)]
-
                 self.components[comp] = network_types[type(net.descriptor).__name__[:-10]](net.descriptor, comp)  # Initialize the Network (as tf)
-                self.components[comp].building(aux_input, load and os.path.isfile(comp + ".npy"))  # Initialize the Network (as tf)
+
+                self.components[comp].building(aux_input, load, load_path + self.name + "_" + comp + ".npy")  # Initialize the Network (as tf)
 
                 outs = self.descriptor.comp_by_output(comp)  # Compile all the components that take the production of comp
+
                 for out in outs:
                     if "o" in out:  # If the component is an output, add it to the predictions
                         if out not in self.predictions.keys():  # If it is the first one
@@ -289,9 +310,8 @@ class MNM(object):
 
     def save_weights(self, path="/home/unai/Escritorio/MultiNetwork"):
 
-        self.descriptor.save(path + "model.txt")
         for cmp in self.components:
-            self.components[cmp].network.save_weights(self.sess)
+            self.components[cmp].save_weights(self.sess, path + str(self.name) + "_")
 
     def load_weights(self):
 
@@ -307,12 +327,12 @@ def histogram(x):
     plt.show()
 
 
-def reset_graph(seed):
+def reset_graph(random_seed):
 
     tf.reset_default_graph()
-    tf.set_random_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
+    tf.set_random_seed(random_seed)
+    np.random.seed(random_seed)
+    random.seed(random_seed)
 
 
 if __name__ == "__main__":
@@ -424,10 +444,10 @@ if __name__ == "__main__":
         print(accs)
 
         if seed % 10 == 0:
-            np.savetxt("accuracies" + str(seed) + ".txt", accs)
-            np.savetxt("MSEs" + str(seed) + ".txt", mses)
-            np.savetxt("images" + str(seed) + ".txt", images)
-            np.savetxt("conds" + str(seed) + ".txt", conds)
+            np.save("accuracies" + str(seed) + ".npy", accs)
+            np.save("MSEs" + str(seed) + ".npy", mses)
+            np.save("images" + str(seed) + ".npy", images)
+            np.save("conds" + str(seed) + ".npy", conds)
             accs = []
             mses = []
             images = []
