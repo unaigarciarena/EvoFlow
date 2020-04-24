@@ -51,43 +51,54 @@ def reset_graph(seed):
     random.seed(seed)
 
 
-def divide_con(desc, safe, con=""):
+def divide_con(desc, safe="None", con=""):
+    """
+    Given a descriptor, this function takes a connection and places a network in the middle
+    :param desc: VALP descriptor
+    :param safe: An output of the VALP. If specified, this mutator won't affect any connection related to this output
+    :param con: Name of the connection to be divided. In case it is not specified, it is randomly chosen respecting the "safe" parameter
+    :return: The name of the recently introduced network (or -1 in case it fails)
+    """
 
-    nets = []
+    nets = []  # This variable will contain the list of networks that fit into the selected connection
     trial = 50
-    inp_comp = None
-    c = None
-    if con == "":
-        while len(nets) == 0 and trial > 0:
+    inp_comp = None  # This variable will contain the type of data produced by the component in the input of the selected connection
+    c = None  # This variable will contain the actual connection (not the name) to be divided.
+
+    if con == "":  # If the connection to be modified has not been specified, we have to find one which can be divided
+        while len(nets) == 0 and trial > 0:  # While we haven't found a connection which can be divided and have trials left (it shouldn't be a problem)
             trial += 1
 
-            con = np.random.choice([w for w in desc.connections.keys() if safe not in desc.reachable[desc.connections[w].output]])
+            con = np.random.choice([w for w in desc.connections.keys() if safe not in desc.reachable[desc.connections[w].output]])  # Choose a random connection which doesn't affect the safe output
 
             c = desc.pop_con(con)
             inp_comp = desc.comp_by_ind(c.input)
             out_comp = desc.comp_by_ind(c.output)
+
+            # Compute the nets which can be placed in the middle of the connection
+            # First according to the input of the connection
             if inp_comp.type == "Model":
                 inp = [inp_comp.producing.type]
             else:
                 inp = nets_produce[type(inp_comp.descriptor)]
 
+            inp_nets = []
+            for kind in inp:
+                inp_nets += types_come_from[kind]
+
+            # Then the output of the connection
             if out_comp.type == "Model":
                 out = [out_comp.taking.type]
             else:
                 out = nets_require[type(out_comp.descriptor)]
-
-            inp_nets = []
             out_nets = []
-            for kind in inp:
-                inp_nets += types_come_from[kind]
-
             for kind in out:
                 out_nets += types_go_to[kind]
 
-            nets = set(inp_nets).intersection(set(out_nets))
+            nets = set(inp_nets).intersection(set(out_nets))  # Finally, we intersect both sets of possible networks. If a net is present in this final set, we exit the while loop because we have found the connection to be modified
 
             desc.connections[con] = c
-    else:
+    else:  # If the connection has been specified, we simply compute the possible networks to be introduced into the connection (the code is similar)
         c = desc.pop_con(con)
         inp_comp = desc.comp_by_ind(c.input)
         out_comp = desc.comp_by_ind(c.output)
@@ -112,8 +123,11 @@ def divide_con(desc, safe, con=""):
         nets = set(inp_nets).intersection(set(out_nets))
 
         desc.connections[con] = c
-    if len(nets) == 0:
+
+    if len(nets) == 0:  # If we haven't found a possibility, return with error code
         return -1
+
+    # Select a network type from all the possibilities, and its different characteristics
 
     net = np.random.choice(list(nets))
     aux = np.random.randint(5, 50)
@@ -137,13 +151,15 @@ def divide_con(desc, safe, con=""):
     if "Dec" in net:
         desc.networks[new].descriptor.rands += [0]
 
+    # Delete the previous connection and add the new ones (from the input to the new net, and from the new net to the output)
+
     desc.connect(c.input, new, c.name)
     desc.connect(new, c.output)
 
     desc.reachable[new] = [new] + desc.reachable[c.output]
     desc.reachable[c.input] += [new]
 
-    for node in list(desc.networks.keys()) + list(desc.inputs.keys()):
+    for node in list(desc.networks.keys()) + list(desc.inputs.keys()):  # Update the reachable attribute from the previous networks.
         if c.input in desc.reachable[node]:
             desc.reachable[node] += [new]
 
@@ -151,14 +167,22 @@ def divide_con(desc, safe, con=""):
 
 
 def add_con(desc, safe, inp=None, out=None):
+    """
+    Given a descriptor, this function adds a connection.
+    :param desc: VALP descriptor
+    :param safe: An output of the VALP. If specified, this mutator won't affect any connection related to this output
+    :param inp: A VALP component. If specified, would be the input of the connection
+    :param out: A VALP component. If specified, would be the output of the connection
+    :return: The name of the recently added connection (or -1 in case it fails)
+    """
 
     able = False
     trial = 50
 
-    while not able and trial > 0:
+    while not able and trial > 0:  # Similarly to the previous function, we have a limit of trials, but it shouldn't be a problem
 
-        if inp is None:
-            if out is None:
+        if inp is None:  # If the input is not predefined
+            if out is None:  # If both are undefined, we randomly select an output for the connection, and search for compatible inputs
                 out = np.random.choice([w for w in (list(desc.networks.keys()) + list(desc.outputs.keys())) if safe not in desc.reachable[w]])
             if "Network" in type(desc.comp_by_ind(out)).__name__:
                 pass  # print(type(desc.comp_by_ind(out).descriptor).__name__, "onv" in type(desc.comp_by_ind(out).descriptor).__name__, [x for x in desc.networks.keys() if "onv" in type(desc.comp_by_ind(x).descriptor).__name__])
@@ -175,7 +199,7 @@ def add_con(desc, safe, inp=None, out=None):
                 out = None
 
         else:
-            if out is None:
+            if out is None:  # If the input is defined but not the output, we search for compatible outputs
                 options = [x for x in list(desc.networks.keys()) + list(desc.outputs.keys()) if inp not in desc.reachable[x] and safe not in desc.reachable[x]]
                 if len(options) > 0:
                     able = True
@@ -184,15 +208,17 @@ def add_con(desc, safe, inp=None, out=None):
             elif inp in desc.reachable[out]:
                 raise Exception("U cant make recursive connections yet")
 
-    if not able:
+    if not able:  # If there are no compatibilities, return error
         return -1
 
+    # Perform the connection
     c = desc.connect(inp, out)
     desc.reachable[inp] += desc.reachable[out]
 
-    for node in list(desc.networks.keys()) + list(desc.inputs.keys()):
+    for node in list(desc.networks.keys()) + list(desc.inputs.keys()):  # Update reachables
         if inp in desc.reachable[node]:
             desc.reachable[node] += desc.reachable[out]
+    # Update the rest of requirements
     if "n" in desc.connections[c].output:
         desc.networks[desc.connections[c].output].descriptor.n_inputs += 1
         if "ecoder" in type(desc.networks[desc.connections[c].output].descriptor).__name__:
@@ -204,17 +230,25 @@ def add_con(desc, safe, inp=None, out=None):
 
 
 def del_con(desc, safe, con=""):
-    if con == "":
+    """
+    Given a descriptor, this function deletes a connection.
+    :param desc: VALP descriptor
+    :param safe: An output of the VALP. If specified, this mutator won't affect any connection related to this output
+    :param con: Name of the connection to be deleted. If unspecified, a random viable one will be chosen
+    :return: Name of the deleted connection (or -1 if failed)
+    """
+
+    if con == "":  # If the connection is not predefined, choose a deletable one
         keys = list(desc.connections.keys())
         np.random.shuffle(keys)
         con = keys.pop()
         while len(keys) > 0 and not (is_deletable(desc, con) and safe not in desc.reachable[desc.connections[con].output]):
             con = keys.pop()
 
-    if not is_deletable(desc, con):
+    if not is_deletable(desc, con):  # If we haven't found a deletable connection
         return -1
 
-    if "n" in desc.connections[con].output:
+    if "n" in desc.connections[con].output:  # Perform the necessary changes to the descriptor of the network in the input of the connection
         desc.networks[desc.connections[con].output].descriptor.n_inputs -= 1
         if "ecoder" in type(desc.networks[desc.connections[con].output].descriptor).__name__:
             if (np.random.rand() < 0.5 and len(desc.networks[desc.connections[con].output].descriptor.rands) > 1) or len(desc.networks[desc.connections[con].output].descriptor.conds) < 1:
@@ -222,16 +256,17 @@ def del_con(desc, safe, con=""):
             else:
                 desc.networks[desc.connections[con].output].descriptor.conds.pop()
 
+    # Update the reachable attributes of the VALP
     to_be_deleted = desc.reachable[desc.connections[con].output]
-    to_be_actualized = []
+    to_be_updated = []
 
-    for net in desc.networks:
+    for net in desc.networks:  # Identify the affected components
         if desc.connections[con].input in desc.reachable[net]:
             desc.reachable[net] = [w for w in desc.reachable[net] if w not in to_be_deleted] + [net]
-            to_be_actualized += [net]
+            to_be_updated += [net]
 
-    for net in desc.networks:
-        if net in to_be_actualized:
+    for net in desc.networks:  # Apply the necessary changes to the identified components
+        if net in to_be_updated:
             for goal in to_be_deleted:
                 if desc.conn_exists(net, goal) or len([w for w in desc.nodes() if w in desc.reachable[net] and goal in desc.reachable[w]]) > 0:
                     aux = desc.reachable[goal]
@@ -242,29 +277,43 @@ def del_con(desc, safe, con=""):
 
 
 def is_deletable(desc, con):
+    """
+    Check if con is deleteble from desc
+    :param desc: VALP descriptor
+    :param con: Connection name
+    :return: Boolean, whether a connection can be deleted while keeping the VALP working properly
+    """
     ins_of_out = []
     outs_of_in = []
-    for conn in desc.connections:
+    for conn in desc.connections:  # We need to check whether the functionality of the selected connection is redundant or not...
         if conn not in con:
-            if desc.connections[conn].input == desc.connections[con].input:
+            if desc.connections[conn].input == desc.connections[con].input:  # ...in the component in the input of the connection
                 outs_of_in += [conn]
-            if desc.connections[conn].output == desc.connections[con].output:
+            if desc.connections[conn].output == desc.connections[con].output:  # ...in the component in the output of the connection
                 ins_of_out += [conn]
 
-    return (len(ins_of_out) > 0) and (len(outs_of_in) > 0)
+    return (len(ins_of_out) > 0) and (len(outs_of_in) > 0)  # If we have found connections which cover the effect produced by deleting the connection both in the input and output components, its deletable
 
 
 def bypass(desc, safe, net=""):
-    if net == "":
+    """
+    Delete one network from a VALP
+    :param desc: VALP descriptor
+    :param safe: An output of the VALP. If specified, this mutator won't affect any component related to this output
+    :param net: Network to be deleted. If unspecified, the function will search for one
+    :return: the name of the deleted network (or -1 if failed to find a bypassable one)
+    """
+    if net == "":  # If the network to be deleted has not been predefined, search for a deletable one
         keys = list(desc.networks.keys())
         np.random.shuffle(keys)
         net = keys.pop()
         while len(keys) > 0 and not (is_bypassable(desc, net) and safe not in desc.reachable[net]):
             net = keys.pop()
 
-    if not is_bypassable(desc, net):
+    if not is_bypassable(desc, net):  # If we haven't found deletable networks, error
         return -1
 
+    # Delete all connections related to the network to be bypassed, and connect the other ends of the networks together
     inps, cons, outs = desc.get_net_context(net)
     for inp in inps:
         for out in outs:
@@ -277,6 +326,7 @@ def bypass(desc, safe, net=""):
     while len(cons) > 0:
         del desc.connections[cons.pop()]
 
+    # Delete network and update reachables
     del desc.networks[net]
 
     for network in desc.networks:
@@ -290,7 +340,13 @@ def bypass(desc, safe, net=""):
 
 
 def is_bypassable(desc, net):
-    if desc.comp_by_ind(net).taking.type == desc.comp_by_ind(net).producing.type:
+    """
+    Given a descriptor and a network, decide whether the VALP can continue working without it
+    :param desc: VALP descriptor
+    :param net: Network name
+    :return: Whether the network can be deleted or not
+    """
+    if desc.comp_by_ind(net).taking.type == desc.comp_by_ind(net).producing.type:  # If the network takes and produces the same data type
         return True
     if "alues" in desc.comp_by_ind(net).taking.type and "iscre" in desc.comp_by_ind(net).producing.type:
         return True
@@ -302,14 +358,22 @@ def is_bypassable(desc, net):
 
 
 def keras_model(xtr, ytr, xts, yts):
+    """
+    This function trains a DNN classification model and stores it. The model is used to compute the Inception score.
+    :param xtr: Train x
+    :param ytr: Train y
+    :param xts: Test x
+    :param yts: Test y
+    :return:
+    """
 
-    np.random.seed(2017)
-    tf.set_random_seed(2017)
+    np.random.seed(0)
+    tf.set_random_seed(0)
 
     height, width = 90, 90
     input_image = Input(shape=(height, width, 3))
 
-    # base_model = InceptionV3(input_tensor=input_image, include_top=False, pooling='avg')
+    # base_model = InceptionV3(input_tensor=input_image, include_top=False, pooling='avg')  # MobileNet model provides better accuracy in the test set
     base_model = MobileNet(input_tensor=input_image, include_top=False, pooling='avg')
     output = Dropout(0.5)(base_model.output)
     predict = Dense(10, activation='softmax')(output)
@@ -338,7 +402,11 @@ def keras_model(xtr, ytr, xts, yts):
 
 
 def load_model(model_name="Mobile"):
-
+    """
+    This function loads a Fashion MNIST classifier. Used for evaluating the sampling capabilities of a model.
+    :param model_name: Which model to load ("Mobile" or "Inception"). The original distance uses inception. Mobile is more accurate for Fashion MNIST
+    :return: A tuple; (tf_graph, predictor). The prediction must be performed using the corresponding tf_graph
+    """
     global loaded_model
     model_paths = {"Mobile": "Mobile-99-94/", "Inception": "Inception-95-91/"}
 
@@ -356,11 +424,16 @@ def load_model(model_name="Mobile"):
 
 
 def is_non_dominated(cand):
+    """
+    Given a solution, compute if it can be added to a PS stored as a MAE. It is used as a chriterion of the Hill Climbing algorithm
+    :param cand: Solution
+    :return: Whether it is added or not (it is also added if true).
+    """
 
     global pareto
 
     for elem in pareto:
-        if (cand[:3] >= elem).all():
+        if (cand[:3] >= elem).all():  # Unless there is a solution which dominates the candidate, return true
             print("Fail")
             return False, "o288"
 
@@ -371,7 +444,11 @@ def is_non_dominated(cand):
 
 
 def improve_two_obectives(cand):
-
+    """
+        Given a solution, compute if it improves two out of three objectives of the previous solution, stored as a MAE. It is used as a chriterion of the Hill Climbing algorithm
+        :param cand: Solution
+        :return: Whether it is acceptable or not (it is also used as current solution if true).
+        """
     global three_objectives
 
     if np.sum(cand[:3] < three_objectives) > 1:
@@ -382,16 +459,21 @@ def improve_two_obectives(cand):
 
 
 def evaluate(mnm):
+    """
+    Given a VALP, evaluate it with train-test and test-test
+    :param mnm: VALP model
+    :return: 6 values: Three for train-test and test-test
+    """
 
     global loaded_model
     height, width = 90, 90
-
+    # Train-test set
     a = mnm.predict({"i0": x_tt}, new=True)[0]
     acc = accuracy_score(a["o1"], np.argmax(c_tt, axis=1))
     mse = mean_squared_error(a["o0"], y_tt)
 
-    images = np.array([misc.imresize(x, (height, width)).astype(float) for x in iter(np.reshape(a["o2"], (-1, 28, 28, 3)))])/255.
-
+    images = np.array([misc.imresize(x, (height, width)).astype(float) for x in iter(np.reshape(a["o2"], (-1, 28, 28, 3)))])/255.  # Transform generations to fit the MobileNet model
+    # Compute IS
     with loaded_model[0].as_default():
         predictions = loaded_model[1].predict(images)
     preds = np.argmax(predictions, axis=1)
@@ -407,6 +489,7 @@ def evaluate(mnm):
 
     test_res = np.array([1-acc, mse, 20-sam_error])
 
+    # Test-test set
     a = mnm.predict({"i0": x_test}, new=True)[0]
     acc = accuracy_score(a["o1"], np.argmax(c_test, axis=1))
     mse = mean_squared_error(a["o0"], y_test)
@@ -430,7 +513,13 @@ def evaluate(mnm):
 
 
 def hill_climbing(seed, evals_remaining, local):
-
+    """
+    Perform Hill Climbing (HC)
+    :param seed: Random
+    :param evals_remaining: Number of evaluations allowed in total
+    :param local: Number of evaluations allowed in this HC run (before restarting until reaching evals_remaining)
+    :return: -- Save the data related to the HC search
+    """
     global pareto
     global three_objectives
     chriterion = improve_two_obectives  # is_non_dominated
@@ -439,12 +528,13 @@ def hill_climbing(seed, evals_remaining, local):
     reset_graph(seed)
     dom = [False, -1]
 
-    data = [[-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, datetime.datetime.now().timestamp()]]
+    data = [[-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, datetime.datetime.now().timestamp()]]  # This will contain the data to be saved
     while evals_remaining > 0:
         three_objectives = np.array([999, 999, 999])
         pareto = []
         reset_no += 1
         trial = 0
+        # Create and evaluate first random VALP
         pivot = MNMDescriptor(10, inp_dict, outp_dict)
         pivot = recursive_creator(pivot, 0, 0)
         # pivot.print_model_graph("Pivot")
@@ -461,10 +551,13 @@ def hill_climbing(seed, evals_remaining, local):
 
         data = data + [[evals_remaining, trial, reset_no, pivot_fit[0], pivot_fit[1], pivot_fit[2], pivot_fit[3], pivot_fit[4], pivot_fit[5], -1, 1, datetime.datetime.now().timestamp()]]
 
+        # Perform local search
         while trial < local and evals_remaining > 0:
-            #print(evals_remaining)
+
             new = deepcopy(pivot)
-            op = np.random.randint(len(ops))
+            op = np.random.randint(len(ops))  # Operation choosen randomly
+
+            # Perform the change and evaluate again
             res = ops[op](new, dom[1])
             #print(res, ops[op].__name__)
             # new.print_model_graph("Eval" + str(evals_remaining) + str(ops[op].__name__) + " " + str(res) + "_Last" + str(last_impr))
@@ -483,7 +576,7 @@ def hill_climbing(seed, evals_remaining, local):
                     model.load_weights()
                     model.convergence_train(btch_sz, min_iter, conv_param, max_iter, {"i0": x_tt, "o1": c_tt, "o0": y_tt, "o2": x_tt}, sync=1)
                     loss = evaluate(model)
-                    dom = chriterion(loss)
+                    dom = chriterion(loss)  # Check whether it should be accepted or not
                     data = data + [[evals_remaining, trial, reset_no, loss[0], loss[1], loss[2], loss[3], loss[4], loss[5], op, int(dom[0]), datetime.datetime.now().timestamp()]]
             except Exception as e:
                 #print("huehue", log, e)
@@ -492,7 +585,7 @@ def hill_climbing(seed, evals_remaining, local):
                     model.sess.close()
                 # raise e
 
-            if dom[0]:
+            if dom[0]:  # In case it should be accepted,
                 model.save_weights(str(evals_remaining))
                 pivot = new
                 new.save("descriptors/Seed" + str(seed) + "_Eval" + str(evals_remaining) + "_local" + str(trial) + "_reset" + str(reset_no) + "_acc" + str(loss[0]) + "_mse" + str(loss[1]) + "_sam" + str(loss[2]) + ".txt")

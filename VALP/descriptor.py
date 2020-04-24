@@ -167,22 +167,35 @@ class MNMDescriptor(object):
         return index
 
     def connect(self, index1, index2, name=""):
+        """
+        Given two components (index1 and index2), this function creates a connection between them and adds it to the list of connections
+        :param index1: name of the first component, e.g., "n0"
+        :param index2: name of the second component, e.g., "n1"
+        :param name: Name of the connection, e.g., "c20". If no name is provided, the first available is chosen
+        :return: The name of the connection
+        """
 
         inp = self.comp_by_ind(index1)
         if name == "":
-            name = "c" + str(self.last_con)
+            name = "c" + str(self.last_con + 1)
         con = Connection(index1, index2, InOut(data_type=inp.producing.type, size=np.random.randint(inp.producing.size)), name)
         self.add_connection(con, name)
         self.last_con += 1
         return name
 
     def save(self, path):
+        """
+        Save the descriptor to a file
+        :param path: Path where the file is to be stored
+        :return: the path with the name of the file
+        """
         path = path + "model_" + str(self.name) + ".txt"
         if os.path.isfile(path):
             os.remove(path)
         f = open(path, "w+")
         for ident in self.networks:
-            f.write(ident + "_" + self.networks[ident].descriptor.codify_components() + "_" + str(self.networks[ident].taking.size) + "," + self.networks[ident].taking.type + "_" + str(self.networks[ident].producing.size) + "," + self.networks[ident].producing.type + "_" + str(self.networks[ident].depth) + "_" + ",".join(self.reachable[ident]) + "\n")
+            f.write(ident + "_" + self.networks[ident].descriptor.codify_components() + "_" + str(self.networks[ident].taking.size) + "," + self.networks[ident].taking.type + "_" + str(self.networks[ident].producing.size) + "," + self.networks[ident].producing.type + "_" +
+                    str(self.networks[ident].depth) + "_" + ",".join(self.reachable[ident]) + "\n")
         f.write("\n")
 
         for ident in self.inputs:
@@ -198,7 +211,14 @@ class MNMDescriptor(object):
 
         f.close()
 
+        return path
+
     def load(self, name=""):
+        """
+        Load the descriptor from a file. Counterpart of the save() method above.
+        :param name: Name of the file in which the descriptor was previously stored.
+        :return: --
+        """
 
         self.constructed = True
         if name == "":
@@ -214,7 +234,7 @@ class MNMDescriptor(object):
         lines = f.readlines()
 
         i = 0
-        while lines[i] != "\n":
+        while lines[i] != "\n":  # Each component is stored in a line
             ident, n_inp, kind, n_hidden, layers, init, act, cond_rand, taking, producing, depth, reachable = lines[i][:-1].split("_")
             kwargs = {}
             if int(ident[1:]) > self.last_net:
@@ -222,13 +242,13 @@ class MNMDescriptor(object):
 
             self.reachable[ident] = reachable.split(",")
 
-            if "onv" in kind:
+            if "onv" in kind:  # Not working right now
                 filters, sizes, layers, strides = layers.split("*")
                 sizes = sizes.split(",")
                 s = np.array([[int(sz) for sz in szs.split("/")] for szs in sizes])
                 desc = network_descriptors[kind](int(inp), int(outp), int(n_inp), layers.split(","), filters.split(","), [int(x) for x in strides.split(",")], s, [int(x) for x in act.split(",")], [int(x) for x in init.split(",")], kwargs)
             else:
-                if len(kwargs) > 0:
+                if len(kwargs) > 0:  # Not working right now
                     kwargs = kwargs.split("-")
                     kwargs[0] = [int(x) for x in kwargs[0].split(".") if len(x) > 0]
                     kwargs[1] = [int(x) for x in kwargs[1].split(".") if len(x) > 0]
@@ -237,7 +257,8 @@ class MNMDescriptor(object):
                     cond_rand[0] = [int(x) for x in cond_rand[0].split(",") if len(x) > 0]
                     cond_rand[1] = [int(x) for x in cond_rand[1].split(",") if len(x) > 0]
                     kwargs["conds"] = cond_rand
-                desc = network_descriptors[kind](int(taking.split(",")[0]), int(producing.split(",")[0]), int(n_inp), int(n_hidden), [int(x) for x in layers.split(",") if x != "-1"], init_functions[[int(x) for x in init.split(",") if x != "-1"]],  act_functions[[int(x) for x in act.split(",") if x != "-1"]], **kwargs)
+                desc = network_descriptors[kind](int(taking.split(",")[0]), int(producing.split(",")[0]), int(n_inp), int(n_hidden), [int(x) for x in layers.split(",") if x != "-1"], init_functions[[int(x) for x in init.split(",") if x != "-1"]],
+                                                 act_functions[[int(x) for x in act.split(",") if x != "-1"]], **kwargs)
 
             # print("ident", ident, "n_inp", n_inp, "kind", kind, "inp", inp, "outp", outp, "layers", layers, "init", init, "act", act, "taking", taking, "producing", producing, "depth", depth, "kwargs", kwargs)
             net = NetworkComp(desc, InOut(size=int(taking.split(",")[0]), data_type=taking.split(",")[1]), InOut(data_type=producing.split(",")[1], size=int(producing.split(",")[0])), int(depth))
@@ -247,7 +268,7 @@ class MNMDescriptor(object):
 
         i += 1
 
-        while lines[i] != "\n":
+        while lines[i] != "\n":  # Inputs
 
             ident, size, kind, depth = lines[i].split("_")
 
@@ -256,7 +277,7 @@ class MNMDescriptor(object):
 
         i += 1
 
-        while lines[i] != "\n":
+        while lines[i] != "\n":  # Outputs
 
             ident, size, kind, depth = lines[i].split("_")
 
@@ -265,7 +286,7 @@ class MNMDescriptor(object):
 
         i += 1
 
-        while i < len(lines):
+        while i < len(lines):  # Connections
 
             name, inp, outp, kind, size = lines[i].split("_")
 
@@ -274,6 +295,7 @@ class MNMDescriptor(object):
 
             self.connections[name] = Connection(inp, outp, InOut(kind, int(size)), name)
             i += 1
+
     # Getter-like functions
 
     def comp_ids(self):
@@ -299,12 +321,16 @@ class MNMDescriptor(object):
         return np.random.choice(list(self.networks.keys())+list(self.outputs.keys()))
 
     def random_input(self, output):
+        """
+        Given a component, this function returns another component which could feed the first one
+        :param output: The component for which an input is required, e.g., "n0" or "o0"
+        :return: The required input, e.g., "n1" or "i1
+        """
         try:
-            if "o" in output or ("Network" in type(self.comp_by_ind(output)).__name__ and "Decoder" in type(self.comp_by_ind(output).descriptor).__name__):
+            if "o" in output or ("Network" in type(self.comp_by_ind(output)).__name__ and "Decoder" in type(self.comp_by_ind(output).descriptor).__name__):  # Outputs and decoders require special treatment
                 aux = np.random.choice([i for i in list(self.networks.keys()) if self.networks[i].producing == self.comp_by_ind(output).taking])
                 return aux
             else:
-
                 comps = {**self.networks, **self.inputs}
                 aux = np.random.choice([i for i in list(comps.keys()) if i not in self.reachable[output] and not self.conn_exists(i, output) and self.networks[output].taking.type in comps[i].producing.type])
                 return aux
@@ -344,6 +370,11 @@ class MNMDescriptor(object):
         self.active_outputs = [i for i in self.active_outputs if i != index]
 
     def comp_by_input(self, comp):
+        """
+        Given a component or a dict of components, this function finds the components providing values to the first one (s)
+        :param comp: The first component
+        :return: The list of input providing components
+        """
         ins = []
         for c in self.connections:
             con = self.connections[c]
@@ -353,6 +384,11 @@ class MNMDescriptor(object):
         return ins
 
     def comp_by_output(self, comp):
+        """
+        Similar to the previous one, but with the output instead of the input.
+        :param comp: The component whom outputs we are searching
+        :return: Components reciving data from "comp"
+        """
         outs = []
         for c in self.connections:
             con = self.connections[c]
@@ -361,6 +397,7 @@ class MNMDescriptor(object):
         return outs
 
     def nets_that_produce(self, data_type, from_list):
+        
         return [net for net in from_list if self.comp_by_ind(net).producing.type in data_type]
 
     def nodes(self):
@@ -441,7 +478,6 @@ class MLPDescriptor(NetworkDescriptor):
         self.dims = dims  # Number of neurons in each layer
 
     def random_init(self, input_size=None, output_size=None, nlayers=None, max_layer_size=None, _=None, __=None, no_drop=None, no_batch=None):
-
         # If the incoming/outgoing sizes have more than one dimension compute the size of the flattened sizes
         if input_size is not None:
             if hasattr(input_size, '__iter__'):
@@ -455,7 +491,7 @@ class MLPDescriptor(NetworkDescriptor):
                 self.output_dim = output_size
 
         # Random initialization
-        if nlayers is not None and max_layer_size is not None:
+        if nlayers is None and max_layer_size is not None:
             self.number_hidden_layers = np.random.randint(nlayers) + 1
             self.dims = [np.random.randint(4, max_layer_size) + 1 for _ in range(self.number_hidden_layers)]
             self.init_functions = np.random.choice(init_functions, size=self.number_hidden_layers + 1)
@@ -475,7 +511,6 @@ class MLPDescriptor(NetworkDescriptor):
 
     def add_layer(self, layer_pos, lay_dims, init_w_function, init_a_function, dropout, drop_prob, batch_norm):
         """
-        Function: network_add_layer()
         Adds a layer at a specified position, with a given  number of units, init weight
         function, activation function.
         If the layer is inserted in layer_pos in [0,number_hidden_layers] then all the
@@ -484,6 +519,14 @@ class MLPDescriptor(NetworkDescriptor):
         to previous layer and it will output output_dim variables.
         If the position for the layer to be added is not within feasible bounds
         in the current architecture, the function silently returns
+        :param layer_pos: Where the layer is added
+        :param lay_dims: Dimension of the layer
+        :param init_w_function: Weight initialization function of the layer
+        :param init_a_function: Activation function of the layer
+        :param dropout: Whether dropout is applied after the layer or not
+        :param drop_prob: The probability of applying dropout to the neurons
+        :param batch_norm: Whether batch normalization is applied to the layer
+        :return: --
         """
 
         # If not within feasible bounds, return
@@ -505,7 +548,6 @@ class MLPDescriptor(NetworkDescriptor):
 
     def remove_layer(self, layer_pos):
         """
-        Function: network_remove_layer()
         Adds a layer at a specified position, with a given  number of units, init weight
         function, activation function.
         If the layer is inserted in layer_pos in [0,number_hidden_layers] then all the
@@ -514,6 +556,8 @@ class MLPDescriptor(NetworkDescriptor):
         to previous layer and it will output output_dim variables.
         If the position for the layer to be added is not within feasible bounds
         in the current architecture, the function silently returns
+        :param layer_pos: Layer to be removed
+        :return: --
         """
 
         # If not within feasible bounds, return
@@ -578,7 +622,7 @@ class MLPDescriptor(NetworkDescriptor):
 class ConvDescriptor(NetworkDescriptor):
     def __init__(self, number_hidden_layers=2, input_dim=(28, 28, 3), output_dim=(7, 7, 1), op_type=(0, 1), filters=((3, 3, 2), (3, 3, 2)), strides=((1, 1, 1), (1, 1, 1)), init_fs=(0, 0), act_fs=(0, 0), dropout=(), batch_norm=()):
         """
-        Descriptor for convolutional cells
+        Descriptor for convolutional cells. Not working right now
         :param number_hidden_layers: Number
         :param input_dim:
         :param output_dim:

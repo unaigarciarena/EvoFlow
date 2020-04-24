@@ -9,7 +9,7 @@ from VALP.ModelDescriptor import recursive_creator
 from VALP.descriptor import MNMDescriptor
 
 
-def add_subpath(agent, desc):
+def add_subpath(agent, desc):  # Not used right now
     inps = [0]
     con = None
 
@@ -26,12 +26,21 @@ def add_subpath(agent, desc):
 
 
 def eval_valp(individual):
+    """
+    Given a descriptor, this function creates a VALP and evaluates it. Used just for development
+    :param individual: VALP descriptor
+    :return: --
+    """
     model = MNM(individual.model_descriptor, batch_size, data_inputs, data_outputs, loss_weights)
     loss = model.epoch_train(batch_size, 40000, 5)
     a, = model.predict({"i0": x_test}, [], new=True)
 
 
 def data():
+    """
+    Load Fashion MNIST
+    :return: Train and test data for classification and regression problems
+    """
     if not os.path.isfile("f_mnist.npy"):
         import tensorflow as tf
         fashion_mnist = tf.keras.datasets.fashion_mnist.load_data()
@@ -52,7 +61,10 @@ def data():
 
 
 def diol():
-
+    """
+    Loads Fashion MNIST in dict format, as a VALP uses it
+    :return: Fashion MNIST in dict format
+    """
     x_tr, c_tr, y_tr, x_te, c_te, y_te = data()
     oh_enc = OneHotEncoder(categories='auto')
     c_tr = oh_enc.fit_transform(np.reshape(c_tr, (-1, 1))).toarray()
@@ -70,7 +82,7 @@ def diol():
     return lw, (di, id), (do, od), (x_tr, c_tr, y_tr, x_te, c_te, y_te)
 
 
-def overkill_conn(desc):
+def overkill_conn(desc):  # Not used
     available_nets = list(desc.networks.keys())  # This list contains the networks that can receive a connection (until proven otherwise)
 
     while len(available_nets) > 0:
@@ -88,7 +100,7 @@ def overkill_conn(desc):
     return desc
 
 
-def get_agent(desc, cmp, cons):
+def get_agent(desc, cmp, cons):  # Not used
 
     for con in cons:
         if con.output == cmp or "i" in cmp:

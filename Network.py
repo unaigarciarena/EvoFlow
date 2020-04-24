@@ -244,8 +244,7 @@ class ConvDescriptor(NetworkDescriptor):
         self.layers = op_type
         self.filters = filters
         self.strides = strides
-        self.shapes = []    # This is an important variable which contains the shapes of the blobs. This way we control that the CNN does not produce
-                            # too small blobs
+        self.shapes = []    # This is an important variable which contains the shapes of the blobs. This way we control that the CNN does not produce too small blobs
 
     def random_init(self, input_size, output_size, nlayers, _, max_stride, max_filter, no_drop, no_batch):
         """

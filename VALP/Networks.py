@@ -6,26 +6,34 @@ import math
 
 
 class Network:
+    """
+    Class over which the rest of network classes are defined
+    """
     def __init__(self, network_descriptor, ident):
 
-        self.id = ident
+        self.id = ident  # Name
         self.descriptor = network_descriptor
-        self.List_layers = []
-        self.List_weights = []
-        self.w_assigns = []
-        self.w_phs = []
-        self.b_assigns = []
-        self.b_phs = []
+        self.List_layers = []  # Outputs of each layer
+        self.List_weights = []  # List of weights (can be of any type, dense, convolutional)
+        self.w_assigns = []  # tf.assign operations to manually change the value of the weights
+        self.w_phs = []  # Placeholders to support the tf.assign operations
 
     def reset_network(self):
         self.List_layers = []
         self.List_weights = []
+        self.w_assigns = []
+        self.w_phs = []
 
 
 class MLP(Network):
+    """
+    Class over which all MLPs are defined
+    """
     def __init__(self, descriptor, ident):
         super().__init__(descriptor, ident)
         self.List_bias = []
+        self.b_assigns = []
+        self.b_phs = []
         self.result = None
 
     def create_hidden_layer(self, in_size, out_size, init_w_function, layer_name):
@@ -55,9 +63,11 @@ class MLP(Network):
             act = self.descriptor.act_functions[lay]
             layer = tf.matmul(layer, self.List_weights[lay]) + self.List_bias[lay]
 
+            # We add the placeholders and assign operations to be able to manipulate weights
             self.w_phs += [tf.placeholder("float32", shape=self.List_weights[lay].shape)]
             self.w_assigns += [tf.assign(self.List_weights[lay], self.w_phs[-1])]
 
+            # Same for biases
             self.b_phs += [tf.placeholder("float32", shape=self.List_bias[lay].shape)]
             self.b_assigns += [tf.assign(self.List_bias[lay], self.b_phs[-1])]
 
@@ -83,7 +93,11 @@ class MLP(Network):
         return tensors
 
     def load_weights(self, path=""):
-
+        """
+        This function loads the parameters of a given network. It can be used instead of random initialization.
+        :param path: Location of the weights. Can be, for example, the name of the network, in case there is more than one being evolved
+        :return: --
+        """
         if os.path.isfile(path):
             self.List_weights, self.List_bias = np.load(path, allow_pickle=True)
 
@@ -93,35 +107,36 @@ class MLP(Network):
 
                 if i == 0:  # If input
                     if self.List_weights[i].shape[0] < self.descriptor.input_dim:  # In case the input size of a network has been increased, we complete the weights of the first layer
-                        if "uniform" in self.descriptor.List_init_functions[i].__name__:
-                            new = tf.Variable(self.descriptor.List_init_functions[i](shape=[self.descriptor.input_dim-self.List_weights[i].shape[0].value, self.List_weights[i].shape[1].value], minval=-0.1, maxval=0.1), name="W"+str(i))
-                        elif "normal" in self.descriptor.List_init_functions[i].__name__:
-                            new = tf.Variable(self.descriptor.List_init_functions[i](shape=[self.descriptor.input_dim-self.List_weights[i].shape[0].value, self.List_weights[i].shape[1].value], mean=0, stddev=0.03), name="W"+str(i))
+                        if "uniform" in self.descriptor.init_functions[i].__name__:
+                            new = tf.Variable(self.descriptor.init_functions[i](shape=[self.descriptor.input_dim-self.List_weights[i].shape[0].value, self.List_weights[i].shape[1].value], minval=-0.1, maxval=0.1), name="W"+str(i))
+                        elif "normal" in self.descriptor.init_functions[i].__name__:
+                            new = tf.Variable(self.descriptor.init_functions[i](shape=[self.descriptor.input_dim-self.List_weights[i].shape[0].value, self.List_weights[i].shape[1].value], mean=0, stddev=0.03), name="W"+str(i))
                         else:
-                            new = tf.Variable(self.descriptor.List_init_functions[i](shape=[self.descriptor.input_dim-self.List_weights[i].shape[0].value, self.List_weights[i].shape[1].value]), name="W"+str(i))
-                        self.List_weights[i] = tf.concat((self.List_weights[i], new), axis=0)
+                            new = tf.Variable(self.descriptor.init_functions[i](shape=[self.descriptor.input_dim-self.List_weights[i].shape[0].value, self.List_weights[i].shape[1].value]), name="W"+str(i))
+                        self.List_weights[i] = tf.Variable(tf.concat((self.List_weights[i], new), axis=0))
 
                     elif self.List_weights[i].shape[0] > self.descriptor.input_dim:  # In case the input size of a network has been reduced, we discard part of the weights
-                        self.List_weights[i] = self.List_weights[i][:self.descriptor.input_dim, :]
+                        self.List_weights[i] = tf.Variable(self.List_weights[i][:self.descriptor.input_dim, :])
 
                 if i == len(self.List_weights)-1:  # If output
 
                     if self.List_weights[i].shape[1] < self.descriptor.output_dim:  # If the ouput size of a network has been increased, we complete the last weight matrix and bias vector
-                        if "uniform" in self.descriptor.List_init_functions[i].__name__:
-                            new = tf.Variable(self.descriptor.List_init_functions[i](shape=[self.List_weights[i].shape[0].value, self.descriptor.output_dim-self.List_weights[i].shape[1].value], minval=-0.1, maxval=0.1), name="W"+str(i))
-                        elif "normal" in self.descriptor.List_init_functions[i].__name__:
-                            new = tf.Variable(self.descriptor.List_init_functions[i](shape=[self.List_weights[i].shape[0].value, self.descriptor.output_dim-self.List_weights[i].shape[1].value], mean=0, stddev=0.03), name="W"+str(i))
+                        if "uniform" in self.descriptor.init_functions[i].__name__:
+                            new = tf.Variable(self.descriptor.init_functions[i](shape=[self.List_weights[i].shape[0].value, self.descriptor.output_dim-self.List_weights[i].shape[1].value], minval=-0.1, maxval=0.1), name="W"+str(i))
+                        elif "normal" in self.descriptor.init_functions[i].__name__:
+                            new = tf.Variable(self.descriptor.init_functions[i](shape=[self.List_weights[i].shape[0].value, self.descriptor.output_dim-self.List_weights[i].shape[1].value], mean=0, stddev=0.03), name="W"+str(i))
                         else:
-                            new = tf.Variable(self.descriptor.List_init_functions[i](shape=[self.List_weights[i].shape[0].value, self.descriptor.output_dim-self.List_weights[i].shape[1].value]), name="W"+str(i))
-                        self.List_weights[i] = tf.concat((self.List_weights[i], new), axis=1)
-                        self.List_bias[i] = tf.concat((self.List_bias[i], tf.zeros(self.descriptor.output_dim-self.List_bias[i].shape[0].value)), axis=0)
+                            new = tf.Variable(self.descriptor.init_functions[i](shape=[self.List_weights[i].shape[0].value, self.descriptor.output_dim-self.List_weights[i].shape[1].value]), name="W"+str(i))
+                        self.List_weights[i] = tf.Variable(tf.concat((self.List_weights[i], new), axis=1))
+                        self.List_bias[i] = tf.Variable(tf.concat((self.List_bias[i], tf.zeros(self.descriptor.output_dim-self.List_bias[i].shape[0].value)), axis=0))
 
                     elif self.List_weights[i].shape[1] > self.descriptor.output_dim:  # If the output size of a network has been decreased, we discard part of the weights and biases
-                        self.List_weights[i] = self.List_weights[i][:, :self.descriptor.output_dim]
-                        self.List_bias[i] = self.List_bias[i][:self.descriptor.output_dim]
+                        self.List_weights[i] = tf.Variable(self.List_weights[i][:, :self.descriptor.output_dim])
+                        self.List_bias[i] = tf.Variable(self.List_bias[i][:self.descriptor.output_dim])
             self.List_weights = self.List_weights.tolist()
             self.List_bias = self.List_bias.tolist()
         else:
+            print("Path not found")
             self.initialization()
 
     def save_weights(self, sess, path):

@@ -103,7 +103,7 @@ class MNM(object):
         else:
             return None
 
-    def initialize(self, load, load_path=""):
+    def initialize(self, load, load_path="", vars=None):
         """
         This function calls recursive_init, which either initializes or loads the tf weights, and constructs the different loss functions
         :param load: Whether the weights have to be loaded or can be randomly initialized
@@ -124,7 +124,6 @@ class MNM(object):
                 self.loss_function += self.sub_losses[pred]
                 self.predictions[pred] = tf.reshape(tf.argmax(self.predictions[pred], axis=1), (-1, 1))  # tf.sigmoid(self.predictions[pred])
             elif self.descriptor.outputs[pred].taking.type == "values":
-
                 self.sub_losses[pred] = self.loss_weights[pred] * tf.reduce_mean(tf.pow(self.predictions[pred] - self.outputs[pred], 2) / reduce(lambda x, y: x*y, self.outputs[pred].shape[1:]).value)  # tf.losses.mean_squared_error(self.predictions[pred], self.outputs[pred])
                 self.loss_function += self.sub_losses[pred]
             elif self.descriptor.outputs[pred].taking.type == "samples":
@@ -138,9 +137,14 @@ class MNM(object):
                 self.sub_losses[network] = -0.00001 * tf.reduce_mean(1 + self.components[network].z_log_sigma_sq - tf.square(self.components[network].z_mean) - tf.exp(self.components[network].z_log_sigma_sq))
                 self.loss_function += self.sub_losses[network]
                 self.loss_function_sample += self.sub_losses[network]
-
-        self.optimizer = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function)
-        self.optimizer_samp = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function_sample)
+        if vars is not None:
+            vars = [self.components[net].List_weights + self.components[net].List_bias for net in vars]
+            vars = [item for sublist in vars for item in sublist]
+        self.optimizer = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function, var_list=vars)
+        try:
+            self.optimizer_samp = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function_sample, var_list=vars)
+        except:
+            self.optimizer_samp = None
         self.sess.run(tf.compat.v1.global_variables_initializer())
 
     def epoch_train(self, batch_size, epochs, sync, display_step=1):
@@ -214,7 +218,7 @@ class MNM(object):
             last_res[1:] = last_res[:-1]
             last_res[0], p1 = self.sess.run([self.loss_function, self.predictions["o1"]], test_dict)
 
-            if epoch % display_step == 0:
+            if epoch % display_step == 0 or True:
                 print(epoch, last_res[0])
 
             epoch += 1
@@ -281,7 +285,6 @@ class MNM(object):
                 for comp_below in comps_below:  # For each component on which comp depends
                     aux_input += [self.component_output_by_id(comp_below)]
                 self.components[comp] = network_types[type(net.descriptor).__name__[:-10]](net.descriptor, comp)  # Initialize the Network (as tf)
-
                 self.components[comp].building(aux_input, load, load_path + self.name + "_" + comp + ".npy")  # Initialize the Network (as tf)
 
                 outs = self.descriptor.comp_by_output(comp)  # Compile all the components that take the production of comp
