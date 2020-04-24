@@ -108,7 +108,7 @@ def train_init():
 
     model = MNM(desc, hypers["btch_sz"], data_inputs["Train"], data_outputs["Train"], loss_func_weights={"o0": hypers["wo0"], "o1": hypers["wo1"], "o2": hypers["wo2"]}, name=name, lr=hypers["lr"], opt=hypers["opt"], random_seed=seed)
 
-    model.convergence_train(hypers["btch_sz"], 2000, 1, 0.9, 10000, display_step=50)
+    model.convergence_train(hypers["btch_sz"], iter_lim/5, conv_param, proportion, iter_lim, display_step=50)
 
     # ####### Save model characteristics.
 
@@ -299,7 +299,7 @@ def modify(nets, probs, ranks, desc, hypers):
 
     model.initialize(load=True, load_path="", vars=trainables)
 
-    model.convergence_train(hypers["btch_sz"], 100, 1, 0.9, 500, display_step=50)
+    model.convergence_train(hypers["btch_sz"], iter_lim/100, conv_param, proportion, iter_lim/20, display_step=50)
 
     results = evaluate_model(model)
 
@@ -368,7 +368,7 @@ def network_relevance(valp, orig_res):
     rank[rank > lim] = 1
     rank[results < 1.03] = 0
 
-    results -= (np.min(results, axis=0)*0.9)
+    results -= (np.min(results, axis=0)*0.9)  # To avoid [0-1] normalization, which could give problems
     results /= np.max(results, axis=0)
 
     results = 1 / (results[:, 0] * results[:, 1] * results[:, 2])
@@ -390,7 +390,9 @@ if __name__ == "__main__":
     division = args.integers[3]
     rnd = args.integers[4]
     lim = args.integers[5]
-
+    conv_param = 1
+    proportion = 0.9
+    iter_lim = 10000
     hyps = {"btch_sz": [150], "wo0": [1], "wo1": [1], "wo2": [1], "opt": [0], "lr": [0.001]}
 
     loss_weights, (data_inputs, inp_dict), (data_outputs, outp_dict), (x_train, c_train, y_train, x_test, c_test, y_test) = diol()

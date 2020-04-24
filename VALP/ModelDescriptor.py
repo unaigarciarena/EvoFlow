@@ -350,7 +350,7 @@ if __name__ == "__main__":
         np.random.seed(seed)
         random.seed(seed)
 
-        model_descriptor = MNMDescriptor(10, inp_dict, outp_dict)
+        model_descriptor = MNMDescriptor(max_comp=10, model_inputs=inp_dict, model_outputs=outp_dict)
 
         model_descriptor = recursive_creator(model_descriptor, 0, conv_prob=0)
 

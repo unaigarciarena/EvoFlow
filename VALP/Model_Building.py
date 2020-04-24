@@ -108,6 +108,7 @@ class MNM(object):
         This function calls recursive_init, which either initializes or loads the tf weights, and constructs the different loss functions
         :param load: Whether the weights have to be loaded or can be randomly initialized
         :param load_path: Path from which info has to be loaded
+        :param vars: list of names of networks (In case you only want a subset of variables to be trained)
         :return: --
         """
         aux_pred = {}
@@ -298,20 +299,20 @@ class MNM(object):
                         else:  # If not, add it
                             self.predictions[out] = self.predictions[out] + self.components[comp].result[:, :self.descriptor.outputs[out].taking.size if not isinstance(self.descriptor.outputs[out].taking.size, tuple) else reduce(lambda x, y: x*y, self.descriptor.outputs[out].taking.size)]
 
-    def save(self, path="/home/unai/Escritorio/MultiNetwork/model"):
+    def save(self, path):
         saver = tf.train.Saver()
 
         saver.save(self.sess, path)
         self.descriptor.save(path + ".txt")
 
-    def load(self, path="/home/unai/Escritorio/MultiNetwork"):
+    def load(self, path):
 
         self.descriptor.load(path + "model.txt")
         self.initialize(False)
         saver = tf.train.Saver()
         saver.restore(self.sess, path)
 
-    def save_weights(self, path="/home/unai/Escritorio/MultiNetwork"):
+    def save_weights(self, path):
 
         for cmp in self.components:
             self.components[cmp].save_weights(self.sess, path + str(self.name) + "_")
@@ -319,15 +320,6 @@ class MNM(object):
     def load_weights(self):
 
         self.initialize(True)
-
-
-def histogram(x):
-    # the histogram of the data
-    plt.hist(x, 50, normed=1, facecolor='green', alpha=0.75)
-
-    plt.grid(True)
-
-    plt.show()
 
 
 def reset_graph(random_seed):
@@ -414,7 +406,7 @@ if __name__ == "__main__":
 
         reset_graph(seed)
 
-        model_descriptor = MNMDescriptor(10, inp_dict, outp_dict)
+        model_descriptor = MNMDescriptor(max_comp=10, model_inputs=inp_dict, model_outputs=outp_dict)
 
         model_descriptor = recursive_creator(model_descriptor, 0, conv_prob=0)
         model_descriptor.print_model_graph()
@@ -423,7 +415,7 @@ if __name__ == "__main__":
         start = time.time()
         print("Seed:", str(seed), "Started at", time.asctime(time.localtime(start)))
 
-        loss = model.epoch_train(btch_sz, 40000, 0)
+        loss = model.epoch_train(batch_size=btch_sz, epochs=40000, sync=0)
         # model.save()
         # a, = model.predict({"i0": x_test}, [], new=False)
         a, = model.predict({"i0": x_test}, [], new=True)

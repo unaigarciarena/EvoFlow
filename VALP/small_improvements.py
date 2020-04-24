@@ -51,6 +51,44 @@ def reset_graph(seed):
     random.seed(seed)
 
 
+def dividing_nets(desc, con):
+    """
+    Given a VALP descriptor and a connection, this function returns the set of networks that can be introduced in the middle of the connection
+    :param desc: VALP descriptor
+    :param con: Connection name
+    :return: Set of networks that can be introduced in the middle of the connection (can be empty)
+    """
+    c = desc.pop_con(con)
+    inp_comp = desc.comp_by_ind(c.input)
+    out_comp = desc.comp_by_ind(c.output)
+
+    # Compute the nets which can be placed in the middle of the connection
+    # First according to the input of the connection
+    if inp_comp.type == "Model":
+        inp = [inp_comp.producing.type]
+    else:
+        inp = nets_produce[type(inp_comp.descriptor)]
+
+    inp_nets = []
+    for kind in inp:
+        inp_nets += types_come_from[kind]
+
+    # Then the output of the connection
+    if out_comp.type == "Model":
+        out = [out_comp.taking.type]
+    else:
+        out = nets_require[type(out_comp.descriptor)]
+    out_nets = []
+    for kind in out:
+        out_nets += types_go_to[kind]
+
+    nets = set(inp_nets).intersection(set(out_nets))  # Finally, we intersect both sets of possible networks. If a net is present in this final set, we exit the while loop because we have found the connection to be modified
+
+    desc.connections[con] = c
+
+    return nets
+
+
 def divide_con(desc, safe="None", con=""):
     """
     Given a descriptor, this function takes a connection and places a network in the middle
@@ -70,59 +108,10 @@ def divide_con(desc, safe="None", con=""):
             trial += 1
 
             con = np.random.choice([w for w in desc.connections.keys() if safe not in desc.reachable[desc.connections[w].output]])  # Choose a random connection which doesn't affect the safe output
+            nets = dividing_nets(desc, con)
 
-            c = desc.pop_con(con)
-            inp_comp = desc.comp_by_ind(c.input)
-            out_comp = desc.comp_by_ind(c.output)
-
-            # Compute the nets which can be placed in the middle of the connection
-            # First according to the input of the connection
-            if inp_comp.type == "Model":
-                inp = [inp_comp.producing.type]
-            else:
-                inp = nets_produce[type(inp_comp.descriptor)]
-
-            inp_nets = []
-            for kind in inp:
-                inp_nets += types_come_from[kind]
-
-            # Then the output of the connection
-            if out_comp.type == "Model":
-                out = [out_comp.taking.type]
-            else:
-                out = nets_require[type(out_comp.descriptor)]
-            out_nets = []
-            for kind in out:
-                out_nets += types_go_to[kind]
-
-            nets = set(inp_nets).intersection(set(out_nets))  # Finally, we intersect both sets of possible networks. If a net is present in this final set, we exit the while loop because we have found the connection to be modified
-
-            desc.connections[con] = c
     else:  # If the connection has been specified, we simply compute the possible networks to be introduced into the connection (the code is similar)
-        c = desc.pop_con(con)
-        inp_comp = desc.comp_by_ind(c.input)
-        out_comp = desc.comp_by_ind(c.output)
-        if inp_comp.type == "Model":
-            inp = [inp_comp.producing.type]
-        else:
-            inp = nets_produce[type(inp_comp.descriptor)]
-
-        if out_comp.type == "Model":
-            out = [out_comp.taking.type]
-        else:
-            out = nets_require[type(out_comp.descriptor)]
-
-        inp_nets = []
-        out_nets = []
-        for kind in inp:
-            inp_nets += types_come_from[kind]
-
-        for kind in out:
-            out_nets += types_go_to[kind]
-
-        nets = set(inp_nets).intersection(set(out_nets))
-
-        desc.connections[con] = c
+        nets = dividing_nets(desc, con)
 
     if len(nets) == 0:  # If we haven't found a possibility, return with error code
         return -1

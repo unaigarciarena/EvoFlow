@@ -342,9 +342,9 @@ def batch(x, size, i):
 # These functions return random network descriptors
 
 
-def decoder_descriptor(z_dim, x_dim):
+def decoder_descriptor(z_dim, x_dim, max_size=100, min_size=5, max_depth=10):
 
-    dim_list = np.random.randint(4, 50, np.random.randint(1, 5))
+    dim_list = np.random.randint(min_size, max_size, np.random.randint(2, max_depth))
 
     n_hidden = len(dim_list)
 
@@ -356,9 +356,9 @@ def decoder_descriptor(z_dim, x_dim):
     return DecoderDescriptor(z_dim, x_dim, 0, n_hidden, dim_list, decoder_init_functions,  decoder_act_functions, [[], []])
 
 
-def generic_descriptor(input_dim, output_dim):
+def generic_descriptor(input_dim, output_dim, max_size=100, min_size=5, max_depth=10):
 
-    dim_list = np.random.randint(4, 50, np.random.randint(1, 5))
+    dim_list = np.random.randint(min_size, max_size, np.random.randint(2, max_depth))
 
     n_hidden = len(dim_list)
 
@@ -411,9 +411,9 @@ def conv_dec_descriptor(in_dim, out_dim):
     return ConvDecoderDescriptor(in_dim, out_dim, 0, layers, filters, strides, act, init, outs, [[], []])
 
 
-def discrete_descriptor(input_dim, output_dim):
+def discrete_descriptor(input_dim, output_dim, max_size=100, min_size=5, max_depth=10):
 
-    dim_list = np.random.randint(4, 50, np.random.randint(1, 5))
+    dim_list = np.random.randint(min_size, max_size, np.random.randint(2, max_depth))
 
     n_hidden = len(dim_list)
 
