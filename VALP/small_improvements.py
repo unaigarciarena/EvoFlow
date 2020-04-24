@@ -86,7 +86,7 @@ def dividing_nets(desc, con):
 
     desc.connections[con] = c
 
-    return nets
+    return nets, inp_comp
 
 
 def divide_con(desc, safe="None", con=""):
@@ -108,10 +108,10 @@ def divide_con(desc, safe="None", con=""):
             trial += 1
 
             con = np.random.choice([w for w in desc.connections.keys() if safe not in desc.reachable[desc.connections[w].output]])  # Choose a random connection which doesn't affect the safe output
-            nets = dividing_nets(desc, con)
+            nets, inp_comp = dividing_nets(desc, con)
 
     else:  # If the connection has been specified, we simply compute the possible networks to be introduced into the connection (the code is similar)
-        nets = dividing_nets(desc, con)
+        nets, inp_comp = dividing_nets(desc, con)
 
     if len(nets) == 0:  # If we haven't found a possibility, return with error code
         return -1

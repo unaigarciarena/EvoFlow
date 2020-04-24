@@ -108,7 +108,7 @@ def train_init():
 
     model = MNM(desc, hypers["btch_sz"], data_inputs["Train"], data_outputs["Train"], loss_func_weights={"o0": hypers["wo0"], "o1": hypers["wo1"], "o2": hypers["wo2"]}, name=name, lr=hypers["lr"], opt=hypers["opt"], random_seed=seed)
 
-    model.convergence_train(hypers["btch_sz"], iter_lim/5, conv_param, proportion, iter_lim, display_step=50)
+    model.convergence_train(hypers["btch_sz"], iter_lim//5, conv_param, proportion, iter_lim, display_step=50)
 
     # ####### Save model characteristics.
 
@@ -138,6 +138,7 @@ def reload():
     random.seed(seed)
 
     orig_res = np.load("orig_results" + str(seed) + ".npy")
+    orig_res[2] = 50 + orig_res[2]
     desc = MNMDescriptor(10, inp_dict, outp_dict, name=name)
     desc.load("model_" + str(seed) + ".txt")
     model = MNM(desc, hypers["btch_sz"], data_inputs["Train"], data_outputs["Train"], loss_func_weights={"o0": hypers["wo0"], "o1": hypers["wo1"], "o2": hypers["wo2"]}, name=name, load=False, init=False, random_seed=seed)
@@ -299,7 +300,7 @@ def modify(nets, probs, ranks, desc, hypers):
 
     model.initialize(load=True, load_path="", vars=trainables)
 
-    model.convergence_train(hypers["btch_sz"], iter_lim/100, conv_param, proportion, iter_lim/20, display_step=50)
+    model.convergence_train(hypers["btch_sz"], iter_lim//100, conv_param, proportion, iter_lim//20, display_step=50)
 
     results = evaluate_model(model)
 
@@ -324,7 +325,7 @@ def evaluate_model(valp):
 
     m2e = np.mean(mse(a["o0"], data_outputs["Test"]["o0"]))
     acc = 1 - acc_err(a["o1"][:, 0], np.argmax(data_outputs["Test"]["o1"], axis=1))
-    i_d = -np.mean(inception_score(a["o2"][:100]))
+    i_d = 50-np.mean(inception_score(a["o2"][:100]))
 
     return np.array([m2e, acc, i_d])
 
@@ -337,7 +338,7 @@ def network_relevance(valp, orig_res):
     :return: The networks in the VALP, selection probabilities, and rankings (0 or 1 if the networks are enough important or not)
     """
     assert isinstance(valp, MNM)
-
+    print(orig_res)
     comps = list(valp.components.keys())
 
     results = np.zeros((len(comps), 3))
@@ -363,25 +364,27 @@ def network_relevance(valp, orig_res):
         valp.sess.run(valp.components[n].b_assigns, feed_dict_b)
 
     rank = np.concatenate([ranking(results[:, i]) for i in range(results.shape[1])]).reshape(results.shape, order="F")
+    print(results)
     # From here on, the criterion is still raw
     rank[rank <= lim] = 0
     rank[rank > lim] = 1
     rank[results < 1.03] = 0
+    # [0.1, 1] normalization, avoid using [0, 1]
+    results -= np.min(results, axis=0)
+    results /= (np.max(results, axis=0)/0.9)
+    results += 0.1
 
-    results -= (np.min(results, axis=0)*0.9)  # To avoid [0-1] normalization, which could give problems
-    results /= np.max(results, axis=0)
-
-    results = 1 / (results[:, 0] * results[:, 1] * results[:, 2])
+    results = np.prod(results, axis=1)
 
     results = results/np.sum(results)
-
+    print(results)
     return comps, results, rank
 
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('integers', metavar='int', type=int, choices=range(3000), nargs=5, help='an integer in the range 0..3000')
+    parser.add_argument('integers', metavar='int', type=int, choices=range(3000), nargs=6, help='an integer in the range 0..3000')
     args = parser.parse_args()
 
     seed = args.integers[0]
