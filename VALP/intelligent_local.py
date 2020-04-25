@@ -374,7 +374,7 @@ def network_relevance(valp, orig_res):
     results /= (np.max(results, axis=0)/0.9)
     results += 0.1
 
-    results = np.prod(results, axis=1)
+    results = 1/np.prod(results, axis=1)
 
     results = results/np.sum(results)
     print(results)
