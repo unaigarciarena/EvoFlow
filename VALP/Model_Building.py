@@ -7,7 +7,6 @@ from sklearn.metrics import accuracy_score, mean_squared_error
 import tensorflow as tf
 import numpy as np
 import random
-import matplotlib.pyplot as plt
 from functools import reduce
 import time
 from datetime import timedelta
@@ -47,6 +46,8 @@ class MNM(object):
         self.output_data = {}  # ID: DAta (numpy data, from which learning is done)
         self.lr = lr
         self.opt = opt
+        self.loss_func_weights = loss_func_weights
+        self.subopts = {}
 
         self.initialized = []  # List of initialized components (to know what to build, when recursively creating tf DNNs)
         self.sess = tf.Session()  # config=tf.ConfigProto(device_count={'GPU': 0})
@@ -57,8 +58,8 @@ class MNM(object):
         self.batch_size = batch_size
         self.example_num = inputs[random.choice(list(inputs.keys()))].shape[0]
         self.loss_weights = {}  # Beta parameter. Implemented as tf variables, in case we want to dinamically modify it
-        for i in loss_func_weights:
-            self.loss_weights[i] = tf.Variable(loss_func_weights[i], dtype=np.float, trainable=False)
+        self.b_assign = {}  # Operations to actualize the value of the Beta parameters
+        self.b_ph = {}  # Placeholders where the data will be placed
 
         self.sub_losses = {}  # All the loss functions separated (mainly for debugging)
 
@@ -103,12 +104,13 @@ class MNM(object):
         else:
             return None
 
-    def initialize(self, load, load_path="", vars=None):
+    def initialize(self, load, load_path="", variables=None, trainable_weights=False):
         """
         This function calls recursive_init, which either initializes or loads the tf weights, and constructs the different loss functions
         :param load: Whether the weights have to be loaded or can be randomly initialized
         :param load_path: Path from which info has to be loaded
         :param vars: list of names of networks (In case you only want a subset of variables to be trained)
+        :param trainable_weights: Whether the objective weights can be optimized or not
         :return: --
         """
         aux_pred = {}
@@ -118,32 +120,50 @@ class MNM(object):
         self.loss_function = 0
         self.loss_function_sample = 0
 
+        if variables is not None:
+            variables = [self.components[net].List_weights + self.components[net].List_bias for net in variables]
+            variables = [item for sublist in variables for item in sublist]
+
         # ### Loss function initialization
         for pred in self.predictions.keys():
+            self.loss_weights[pred] = tf.Variable(self.loss_func_weights[pred], dtype=np.float, trainable=trainable_weights)
+            self.b_ph[pred] = tf.placeholder(dtype="float32")
+            self.b_assign[pred] = tf.assign(self.loss_weights[pred], self.b_ph[pred])
             if self.descriptor.outputs[pred].taking.type == "discrete":  # If this fails, it is being initialized twice
                 self.sub_losses[pred] = self.loss_weights[pred] * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.predictions[pred], labels=self.outputs[pred]))
                 self.loss_function += self.sub_losses[pred]
                 self.predictions[pred] = tf.reshape(tf.argmax(self.predictions[pred], axis=1), (-1, 1))  # tf.sigmoid(self.predictions[pred])
+                self.subopts[pred] = opts[self.opt](learning_rate=self.lr).minimize(self.sub_losses[pred], var_list=variables)
             elif self.descriptor.outputs[pred].taking.type == "values":
                 self.sub_losses[pred] = self.loss_weights[pred] * tf.reduce_mean(tf.pow(self.predictions[pred] - self.outputs[pred], 2) / reduce(lambda x, y: x*y, self.outputs[pred].shape[1:]).value)  # tf.losses.mean_squared_error(self.predictions[pred], self.outputs[pred])
                 self.loss_function += self.sub_losses[pred]
+                self.subopts[pred] = opts[self.opt](learning_rate=self.lr).minimize(self.sub_losses[pred], var_list=variables)
             elif self.descriptor.outputs[pred].taking.type == "samples":
-                # print(self.predictions[pred], tf.reshape(self.outputs[pred], (-1, reduce(lambda x, y: x*y, self.outputs[pred].shape[1:]))))
+                to_opt = 0
+                for network in self.descriptor.networks:
+                    if ("Decoder" in type(self.descriptor.comp_by_ind(network).descriptor).__name__) and pred in self.descriptor.reachable[network]:
+                        self.loss_weights[network] = tf.Variable(self.loss_weights[pred], dtype=np.float, trainable=trainable_weights)
+                        self.b_ph[network] = tf.placeholder(dtype="float32")
+                        self.b_assign[network] = tf.assign(self.loss_weights[network], self.b_ph[network])
+                        self.sub_losses[network] = self.loss_weights[network] * -0.5 * tf.reduce_mean(1 + self.components[network].z_log_sigma_sq - tf.square(self.components[network].z_mean) - tf.square(tf.exp(self.components[network].z_log_sigma_sq)))
+                        self.loss_function += self.sub_losses[network]
+                        self.loss_function_sample += self.sub_losses[network]
+                        to_opt += self.sub_losses[network]
                 self.sub_losses[pred] = self.loss_weights[pred] * tf.reduce_mean(tf.pow(tf.layers.flatten(self.predictions[pred]) - tf.layers.flatten(self.outputs[pred]), 2) / reduce(lambda x, y: x*y, self.outputs[pred].shape[1:]).value)
                 self.loss_function_sample += self.sub_losses[pred]
                 self.loss_function += self.sub_losses[pred]
+                self.subopts[pred] = opts[self.opt](learning_rate=self.lr).minimize(self.sub_losses[pred] + to_opt, var_list=variables)
 
-        for network in self.descriptor.networks:
-            if "Decoder" in type(self.descriptor.comp_by_ind(network).descriptor).__name__:
-                self.sub_losses[network] = -0.00001 * tf.reduce_mean(1 + self.components[network].z_log_sigma_sq - tf.square(self.components[network].z_mean) - tf.exp(self.components[network].z_log_sigma_sq))
-                self.loss_function += self.sub_losses[network]
-                self.loss_function_sample += self.sub_losses[network]
-        if vars is not None:
-            vars = [self.components[net].List_weights + self.components[net].List_bias for net in vars]
-            vars = [item for sublist in vars for item in sublist]
-        self.optimizer = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function, var_list=vars)
+        for output in self.descriptor.outputs:
+            print(output, self.descriptor.outputs[output].taking.type)
+
+        if trainable_weights:
+            for i in self.loss_weights:
+                self.loss_function -= self.loss_weights[i]
+
+        self.optimizer = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function, var_list=variables)
         try:
-            self.optimizer_samp = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function_sample, var_list=vars)
+            self.optimizer_samp = opts[self.opt](learning_rate=self.lr).minimize(self.loss_function_sample, var_list=variables)
         except:
             self.optimizer_samp = None
         self.sess.run(tf.compat.v1.global_variables_initializer())
@@ -219,7 +239,7 @@ class MNM(object):
             last_res[1:] = last_res[:-1]
             last_res[0], p1 = self.sess.run([self.loss_function, self.predictions["o1"]], test_dict)
 
-            if epoch % display_step == 0 or True:
+            if epoch % display_step == 1:
                 print(epoch, last_res[0])
 
             epoch += 1
@@ -227,6 +247,151 @@ class MNM(object):
                 # If we have more than 'n' epochs, and 'n' epochs ago we had an smaller error, convergence has been reached.
                 break
         return last_res[0]
+
+    def autoset_training(self, batch_size, conv, conv_param, proportion=0.7, epoch_lim=1000, display_step=-1, incr=0.25, decr=0.125, scaling=False):
+        """
+        Train by convergence. When the loss is was smaller 'n' iterations ago than currently, training is stopped. Also has a epoch limit
+        :param batch_size: Self explanatory
+        :param conv: Epochs to take into account when deciding whether training has converged or not, 'n'
+        :param conv_param: flexibility multiplier to allow larger or shorter convergence criterion
+        :param proportion: proportion to divide train and test sets
+        :param epoch_lim: Training also has to be limited by an epoch limit
+        :param sync: Times the sampling loss function is trained each epoch (VAEs are trained several times with the same input)
+        :param display_step: verbose
+        :return:
+        """
+        last_res = np.zeros((conv, len(self.sub_losses)))
+        epoch = 0
+        aux_ind = 0
+        test_dict = {}
+        train_dict = {}
+        keys = list(self.sub_losses.keys())
+        keys.sort(reverse=True)
+        aux_weights = self.sess.run(self.loss_weights)
+        ws = np.array([aux_weights[x] for x in keys])
+        record = np.zeros((epoch_lim, len(ws)*2))
+        cond = np.zeros(len(keys))
+        
+        for inp in self.inputs:
+
+            test_dict[self.inputs[inp]] = self.input_data[inp][int(self.input_data[inp].shape[0]*proportion):]
+            train_dict[self.inputs[inp]] = self.input_data[inp][:int(self.input_data[inp].shape[0]*proportion)]
+        for output in self.outputs:
+            test_dict[self.outputs[output]] = self.output_data[output][int(self.output_data[output].shape[0]*proportion):]
+            train_dict[self.outputs[output]] = self.output_data[output][:int(self.output_data[output].shape[0]*proportion)]
+
+        while np.min(cond) < conv//5 and epoch < epoch_lim:
+            feed_dict = {}
+
+            for inp in self.inputs:
+                feed_dict[self.inputs[inp]] = batch(train_dict[self.inputs[inp]], batch_size, aux_ind)
+
+            for output in self.outputs:
+                feed_dict[self.outputs[output]] = batch(train_dict[self.outputs[output]], batch_size, aux_ind)
+
+            aux_ind = (aux_ind + batch_size) % self.example_num
+
+            _, partial_loss = self.sess.run([self.optimizer, self.loss_function], feed_dict=feed_dict)  # Normal training
+
+            last_res[1:] = last_res[:-1]
+            aux_losses = self.sess.run(self.sub_losses, test_dict)
+            last_res[0] = [aux_losses[keys[i]]/(ws[i] if ws[i] > 0 else 1) for i in range(len(keys))]
+
+            if epoch % display_step == 1:
+                print(epoch, last_res[0, 0], last_res[0, 1], last_res[0, 2], last_res[0, 3])
+
+            record[epoch, :len(ws)] = last_res[0]
+            record[epoch, len(ws):] = ws
+
+            epoch += 1
+
+            if epoch % (conv//10) == 0:  # We can start checking convergence
+                aux_weights = self.sess.run(self.loss_weights)
+                ws = np.array([aux_weights[x] for x in keys])
+                for ikey, key in enumerate(keys):
+                    conv_index = last_res[np.min([epoch, last_res.shape[0]])-1, ikey]/np.mean(last_res[:, ikey])
+                    if last_res[0, ikey]/np.mean(last_res[:, ikey]) < conv_index/np.power(conv_param, ws[ikey]/10):
+                        if last_res[0, ikey]/np.mean(last_res[:, ikey]) > conv_index*np.power(conv_param, ws[ikey]/10):
+                            multiplier = 1 - ws[ikey]*decr
+                            cond[ikey] += 1
+                        else:
+                            multiplier = 1
+                            cond[ikey] = 0
+                    else:
+                        #print(np.power(conv_param, 1/ws[ikey]), ws[ikey])
+                        multiplier = 1 + ws[ikey]*incr
+                        cond[ikey] = 0
+                    ws[ikey] *= multiplier
+                print(epoch, last_res[0, 0], last_res[0, 1], last_res[0, 2], last_res[0, 3], np.sum([last_res[0, 0], last_res[0, 1], last_res[0, 2], last_res[0, 3]]))
+                ws = ws / np.sum(ws) * ws.shape
+                self.sess.run([self.b_assign[key] for key in keys], feed_dict={self.b_ph[keys[i]]: ws[i]/(np.max([aux_losses[keys[i]], 0.1]) if scaling else 1) for i in range(ws.shape[0])})
+                print(self.sess.run(self.loss_weights))
+                #conv_param = np.sqrt(conv_param)
+
+        return record
+
+    def sequential_training(self, batch_size, conv, conv_param, proportion=0.7, epoch_lim=1000, display_step=-1):
+        """
+        Train by convergence. When the loss is was smaller 'n' iterations ago than currently, training is stopped. Also has a epoch limit
+        :param batch_size: Self explanatory
+        :param conv: Epochs to take into account when deciding whether training has converged or not, 'n'
+        :param conv_param: flexibility multiplier to allow larger or shorter convergence criterion
+        :param proportion: proportion to divide train and test sets
+        :param epoch_lim: Training also has to be limited by an epoch limit
+        :param sync: Times the sampling loss function is trained each epoch (VAEs are trained several times with the same input)
+        :param display_step: verbose
+        :return:
+        """
+
+        aux_ind = 0
+        test_dict = {}
+        train_dict = {}
+        keys = list(self.sub_losses.keys())
+        keys.sort(reverse=True)
+        record = np.zeros((epoch_lim, len(keys)))
+        epoch = 0
+        accum_epoch = 0
+        for inp in self.inputs:
+
+            test_dict[self.inputs[inp]] = self.input_data[inp][int(self.input_data[inp].shape[0]*proportion):]
+            train_dict[self.inputs[inp]] = self.input_data[inp][:int(self.input_data[inp].shape[0]*proportion)]
+        for output in self.outputs:
+            test_dict[self.outputs[output]] = self.output_data[output][int(self.output_data[output].shape[0]*proportion):]
+            train_dict[self.outputs[output]] = self.output_data[output][:int(self.output_data[output].shape[0]*proportion)]
+
+        for ikey, key in enumerate(keys):
+            last_res = np.zeros(conv//len(self.sub_losses))
+
+            while epoch_lim//len(keys) > epoch:
+
+                feed_dict = {}
+
+                for inp in self.inputs:
+                    feed_dict[self.inputs[inp]] = batch(train_dict[self.inputs[inp]], batch_size, aux_ind)
+
+                for output in self.outputs:
+                    feed_dict[self.outputs[output]] = batch(train_dict[self.outputs[output]], batch_size, aux_ind)
+
+                aux_ind = (aux_ind + batch_size) % self.example_num
+                self.sess.run([self.subopts[key], self.sub_losses], feed_dict=feed_dict)
+
+                partial_loss = self.sess.run(self.sub_losses, feed_dict=test_dict)
+
+                record[accum_epoch] = [partial_loss[keys[i]] for i in range(len(keys))]
+                last_res[1:] = last_res[:-1]
+                last_res[0] = partial_loss[key]
+
+                if epoch % display_step == 1:
+                    print(epoch, partial_loss)
+                epoch += 1
+                accum_epoch += 1
+                print(last_res[-1], last_res[0]*conv_param, last_res[last_res == 0].shape[0] == 0)
+                if last_res[-1] < last_res[0]*conv_param and last_res[last_res == 0].shape[0] == 0:
+                    # If we have more than 'n' epochs, and 'n' epochs ago we had an smaller error, convergence has been reached.
+                    break
+
+            epoch = 0
+        return record
 
     def predict(self, inputs, intra_preds=(), new=True):
         """

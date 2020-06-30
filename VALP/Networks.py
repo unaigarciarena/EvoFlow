@@ -1,7 +1,8 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import numpy as np
 import tensorflow as tf
 from VALP.descriptor import ConvDecoderDescriptor, DecoderDescriptor, GenericDescriptor, DiscreteDescriptor, ConvolutionDescriptor, init_functions, act_functions
-import os
 import math
 
 
@@ -136,7 +137,7 @@ class MLP(Network):
             self.List_weights = self.List_weights.tolist()
             self.List_bias = self.List_bias.tolist()
         else:
-            print("Path not found")
+            print("Path not found", path)
             self.initialization()
 
     def save_weights(self, sess, path):

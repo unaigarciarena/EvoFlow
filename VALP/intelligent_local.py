@@ -1,3 +1,5 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 import numpy as np
 from VALP.descriptor import MNMDescriptor
@@ -100,15 +102,18 @@ def train_init():
     random.seed(seed)
 
     name = str(seed)
-    desc = MNMDescriptor(10, inp_dict, outp_dict, name=name)
+    desc = MNMDescriptor(5, inp_dict, outp_dict, name=name)
     desc = recursive_creator(desc, 0, 0, seed)
     hypers = {}
     for hyper in hyps:
         hypers[hyper] = np.random.choice(hyps[hyper])
 
     model = MNM(desc, hypers["btch_sz"], data_inputs["Train"], data_outputs["Train"], loss_func_weights={"o0": hypers["wo0"], "o1": hypers["wo1"], "o2": hypers["wo2"]}, name=name, lr=hypers["lr"], opt=hypers["opt"], random_seed=seed)
+    if intelligent_training == 2:
+        loss_weights = model.sequential_training(hypers["btch_sz"], iter_lim // 50, conv_param, proportion, iter_lim, display_step=10)
+    else:
+        loss_weights = model.autoset_training(hypers["btch_sz"], iter_lim//50, conv_param, proportion, iter_lim, display_step=1, incr=incr, decr=decr, scaling=scale)
 
-    model.convergence_train(hypers["btch_sz"], iter_lim//5, conv_param, proportion, iter_lim, display_step=50)
 
     # ####### Save model characteristics.
 
@@ -117,19 +122,21 @@ def train_init():
 
     results = evaluate_model(model)
 
-    np.save("hypers" + str(seed) + ".npy", hypers)
+    np.save("hypers" + str(seed) + "_" + str(intelligent_training) + "_" + str(n_networks) + "_" + ".npy", hypers)
 
-    np.save("orig_results" + str(seed) + ".npy", results)
+    np.save("orig_results" + str(seed) + "_" + str(intelligent_training) + "_" + str(n_networks) + "_" + ".npy", results)
+
+    np.save("loss_weights" + str(seed) + "_" + str(intelligent_training) + "_" + str(n_networks) + "_" + ".npy", loss_weights)
 
 
-def reload():
+def reload(path="", seed=0):
     """
     This function reloads an already trained and saved VALP (according to the specified first seed). The relevance of the different networks in the VALP is measured too.
     :return: The list of nets present in the VALP, values associated to their importance in the model (the lower value the more important), the ranked version of these values, the model descriptor, and the hyperparameters.
     """
     name = str(seed)
 
-    hypers = np.load("hypers" + str(seed) + ".npy", allow_pickle=True).item()
+    hypers = np.load(path + "hypers" + str(seed) + ".npy", allow_pickle=True).item()
 
     assert isinstance(hypers, dict)
 
@@ -137,13 +144,13 @@ def reload():
     tf.random.set_random_seed(seed)
     random.seed(seed)
 
-    orig_res = np.load("orig_results" + str(seed) + ".npy")
+    orig_res = np.load(path + "orig_results" + str(seed) + ".npy")
     orig_res[2] = 50 + orig_res[2]
     desc = MNMDescriptor(10, inp_dict, outp_dict, name=name)
-    desc.load("model_" + str(seed) + ".txt")
+    desc.load(path + "model_" + str(seed) + ".txt")
     model = MNM(desc, hypers["btch_sz"], data_inputs["Train"], data_outputs["Train"], loss_func_weights={"o0": hypers["wo0"], "o1": hypers["wo1"], "o2": hypers["wo2"]}, name=name, load=False, init=False, random_seed=seed)
 
-    model.initialize(load=True, load_path="")
+    model.initialize(load=True, load_path=path)
 
     nets, probs, ranks = network_relevance(model, orig_res)  # List of network names, their associated probabilities (to be mutated) and their rankings.
 
@@ -257,7 +264,7 @@ def mutate(mutation, desc, comp, conns):
     return res, trainables
 
 
-def modify(nets, probs, ranks, desc, hypers):
+def modify(nets, probs, ranks, desc, hypers, seed=0, seed2=0):
     """
     Main function for applying a modification to a VALP. It also evaluates the VALP and saves the results
     :param nets: List of nets in a VALP
@@ -274,8 +281,8 @@ def modify(nets, probs, ranks, desc, hypers):
     tf.random.set_random_seed(seed2)
     random.seed(seed2)
 
-    print(ranks)
     if not rnd:  # If randomness is not applied
+        print(ranks.sum(axis=1))
         if (ranks.sum(axis=1) == 0).any():  # If there are any network in the bottom three in importance in all objectives
             probs = (ranks.sum(axis=1) == 0) * probs  # Only accept a network as modifiable if they rank between 3 least important networks in all three objectives
             probs = probs / np.sum(probs)  # Update probabilities once the networks more important than bottom three have been taken away
@@ -295,12 +302,12 @@ def modify(nets, probs, ranks, desc, hypers):
 
         mutation = np.random.choice(mutations)
         res, trainables = mutate(mutation, desc, comp, conns)
-
+    print(mutation)
     model = MNM(desc, hypers["btch_sz"], data_inputs["Train"], data_outputs["Train"], loss_func_weights={"o0": hypers["wo0"], "o1": hypers["wo1"], "o2": hypers["wo2"]}, name=name, load=None, init=False, random_seed=seed2, lr=0.0001)
 
-    model.initialize(load=True, load_path="", vars=trainables)
+    model.initialize(load=True, load_path="", variables=trainables)
 
-    model.convergence_train(hypers["btch_sz"], iter_lim//100, conv_param, proportion, iter_lim//20, display_step=50)
+    model.convergence_train(hypers["btch_sz"], iter_lim//100, conv_param, proportion, iter_lim//20, display_step=-1)
 
     results = evaluate_model(model)
 
@@ -338,7 +345,6 @@ def network_relevance(valp, orig_res):
     :return: The networks in the VALP, selection probabilities, and rankings (0 or 1 if the networks are enough important or not)
     """
     assert isinstance(valp, MNM)
-    print(orig_res)
     comps = list(valp.components.keys())
 
     results = np.zeros((len(comps), 3))
@@ -362,9 +368,8 @@ def network_relevance(valp, orig_res):
         feed_dict_b = {p: v for (p, v) in zip(valp.components[n].b_phs, bs)}
         valp.sess.run(valp.components[n].w_assigns, feed_dict_w)
         valp.sess.run(valp.components[n].b_assigns, feed_dict_b)
-
-    rank = np.concatenate([ranking(results[:, i]) for i in range(results.shape[1])]).reshape(results.shape, order="F")
     print(results)
+    rank = np.concatenate([ranking(results[:, i]) for i in range(results.shape[1])]).reshape(results.shape, order="F")
     # From here on, the criterion is still raw
     rank[rank <= lim] = 0
     rank[rank > lim] = 1
@@ -377,14 +382,19 @@ def network_relevance(valp, orig_res):
     results = 1/np.prod(results, axis=1)
 
     results = results/np.sum(results)
-    print(results)
     return comps, results, rank
+
+
+def check_mut(n_nets):
+    for seed in range(1, 30):
+        networks, probabilities, rankings, descriptor, hyperparameters = reload(str(n_nets) + "nets/model_" + str(seed) + "/", seed=seed)
+        print(probabilities)
 
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('integers', metavar='int', type=int, choices=range(3000), nargs=6, help='an integer in the range 0..3000')
+    parser.add_argument('integers', metavar='int', type=int, choices=range(3000), nargs="+", help='an integer in the range 0..3000')
     args = parser.parse_args()
 
     seed = args.integers[0]
@@ -393,17 +403,55 @@ if __name__ == "__main__":
     division = args.integers[3]
     rnd = args.integers[4]
     lim = args.integers[5]
-    conv_param = 1
+    intelligent_training = args.integers[6]
+    n_networks = args.integers[7]
+    conv_param = 0.9
     proportion = 0.9
     iter_lim = 10000
-    hyps = {"btch_sz": [150], "wo0": [1], "wo1": [1], "wo2": [1], "opt": [0], "lr": [0.001]}
+
+    if intelligent_training == 0:
+        wo0, wo1, wo2 = 1, 1, 1
+        incr, decr = 0, 0
+        scale = False
+    elif intelligent_training == 1:
+        wo0, wo1, wo2 = 1, 1, 1
+        incr, decr = 0.25, 0.25
+        scale = False
+    elif intelligent_training == 2:
+        wo0, wo1, wo2 = 1, 1, 1
+        incr, decr = 0, 0
+        scale = False
+    elif intelligent_training == 3:
+        wo0, wo1, wo2 = 1, 0, 0
+        incr, decr = 0, 0
+        scale = False
+    elif intelligent_training == 4:
+        wo0, wo1, wo2 = 0, 1, 0
+        incr, decr = 0, 0
+        scale = False
+    elif intelligent_training == 5:
+        wo0, wo1, wo2 = 0, 0, 1
+        incr, decr = 0, 0
+        scale = False
+    elif intelligent_training == 6:
+        wo0, wo1, wo2 = 1, 1, 1
+        incr, decr = 0, 0
+        scale = True
+    elif intelligent_training == 7:
+        wo0, wo1, wo2 = 1, 1, 1
+        incr, decr = 0.25, 0.25
+        scale = True
+
+    hyps = {"btch_sz": [150], "wo0": [wo0], "wo1": [wo1], "wo2": [wo2], "opt": [0], "lr": [0.001]}
 
     loss_weights, (data_inputs, inp_dict), (data_outputs, outp_dict), (x_train, c_train, y_train, x_test, c_test, y_test) = diol()
     loaded_model = load_model()
-    # train_init()
-
-    second_seeds = np.arange(0, total)
-    for seed2 in second_seeds[second_seed:total:division]:
-        print("Seed2", seed2)
-        networks, probabilities, rankings, descriptor, hyperparameters = reload()
-        modify(networks, probabilities, rankings, descriptor, hyperparameters)
+    # check_mut(5)
+    train_init()
+    #
+    # second_seeds = np.arange(0, total)
+    # for seed2 in second_seeds[second_seed:total:division]:
+    #     print("Seed2", seed2)
+    #     networks, probabilities, rankings, descriptor, hyperparameters = reload(seed=seed)
+    #     descriptor.print_model_graph()
+    #     modify(networks, probabilities, rankings, descriptor, hyperparameters, seed, seed2)
