@@ -22,11 +22,11 @@ def gan_train(nets, placeholders, sess, graph, train_inputs, _, batch_size, __):
 
     with graph.as_default():
         # We define the special GAN structure
-        out = nets["n1"].building(placeholders["in"]["i1"], graph)
+        out = nets["n1"].building(placeholders["in"]["i1"], graph, _)
         predictions["gen"] = tf.nn.sigmoid(out)
-        out = nets["n0"].building(placeholders["in"]["i0"], graph)
+        out = nets["n0"].building(placeholders["in"]["i0"], graph, _)
         predictions["realDisc"] = tf.nn.sigmoid(out)
-        out = nets["n0"].building(predictions["gen"], graph)
+        out = nets["n0"].building(predictions["gen"], graph, _)
         predictions["fakeDisc"] = tf.nn.sigmoid(out)
 
         # Loss function and optimizer

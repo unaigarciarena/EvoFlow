@@ -271,7 +271,7 @@ class Evolving:
             for index, net in enumerate(individual.descriptor_list.keys()):
                 if "hypers" not in net:
                     nets[net] = descs[self.descriptors[index].__name__](individual.descriptor_list[net])
-                    nets[net].initialization(graph)
+                    nets[net].initialization(graph, individual.descriptor_list["hypers"])
 
             predictions = self.loss_function(nets, {"in": self.inp_placeholders, "out": self.out_placeholders}, self.sess, graph, self.train_inputs, self.train_outputs, self.batch_size, individual.descriptor_list["hypers"])
 

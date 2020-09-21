@@ -18,10 +18,10 @@ def train_cnn(nets, placeholders, sess, graph, train_inputs, train_outputs, batc
     aux_ind = 0
     predictions = {}
     with graph.as_default():
-        out = nets["n0"].building(placeholders["in"]["i0"], graph)  # We need to flatten the output of the CNN before feeding it to the MLP
+        out = nets["n0"].building(placeholders["in"]["i0"], graph, None)  # We need to flatten the output of the CNN before feeding it to the MLP
         out = tf.layers.dense(tf.layers.flatten(out), 20)
         predictions["n0"] = out
-        out = nets["n1"].building(predictions["n0"], graph)
+        out = nets["n1"].building(predictions["n0"], graph, None)
         predictions["n1"] = out
 
         lf = tf.losses.softmax_cross_entropy(placeholders["out"]["o1"], predictions["n1"])

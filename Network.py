@@ -596,10 +596,11 @@ class MLP(Network):
         self.List_weights.append(w)
         self.List_bias.append(b)
 
-    def initialization(self, graph):
+    def initialization(self, graph, _):
         """
         This function uses create_hidden_layer iteratively to form the necessary variables for the MLP
         :param graph: tensorflow graph on which the variables are created (and where the whole model is implemented)
+        :param _: Convenience
         :return:
         """
         with graph.as_default():
@@ -610,11 +611,12 @@ class MLP(Network):
 
             self.create_hidden_layer(self.descriptor.dims[self.descriptor.number_hidden_layers-1], self.descriptor.output_dim, self.descriptor.init_functions[self.descriptor.number_hidden_layers], str(self.descriptor.number_hidden_layers))
 
-    def building(self, layer, graph):
+    def building(self, layer, graph, _):
         """
         This function uses the variables created by the initialization function to create the MLP
         :param layer: input of the network
         :param graph: graph on which the variables are defined
+        :param _: Convenience
         :return:
         """
         with graph.as_default():
@@ -624,7 +626,6 @@ class MLP(Network):
                 layer = tf.matmul(layer, self.List_weights[lay]) + self.List_bias[lay]
 
                 if self.descriptor.batch_norm[lay] > 0:
-                    print("batch")
                     layer = tf.layers.batch_normalization(layer)
 
                 if act is not None and lay < self.descriptor.number_hidden_layers:
@@ -643,10 +644,11 @@ class CNN(Network):
     def __init__(self, network_descriptor):
         super().__init__(network_descriptor)
 
-    def initialization(self, graph):
+    def initialization(self, graph, _):
         """
         This function creates all the necessary filters for the CNN
         :param graph: Graph in which the variables are created (and convolutional operations are performed)
+        :param _: Convenience
         :return:
         """
         last_c = self.descriptor.input_dim[-1]
@@ -664,12 +666,13 @@ class CNN(Network):
                 else:  # In case the layer is pooling, no need of weights
                     self.List_weights += [tf.Variable(-1)]
 
-    def building(self, layer, graph):
+    def building(self, layer, graph, _):
         """
         Using the filters defined in the initialization function, create the CNN
         :param layer: Input of the network
         :param graph: Graph in which variables were defined
-        :return:
+        :param _: Convenience
+        :return: Output of the network
         """
         with graph.as_default():
             for ind in range(self.descriptor.number_hidden_layers):
@@ -696,7 +699,7 @@ class TCNN(Network):
     def __init__(self, network_descriptor):
         super().__init__(network_descriptor)
 
-    def initialization(self, graph):
+    def initialization(self, graph, _):
 
         last_c = self.descriptor.input_dim[-1]
         with graph.as_default():
@@ -710,7 +713,7 @@ class TCNN(Network):
 
                 last_c = self.descriptor.filters[ind][2]
 
-    def building(self, layer, graph):
+    def building(self, layer, graph, _):
         with graph.as_default():
             for ind in range(self.descriptor.number_hidden_layers):
                 dyn_input_shape = tf.shape(layer)

@@ -41,9 +41,9 @@ def train_sequential(nets, placeholders, sess, graph, train_inputs, train_output
     predictions = {}
     with graph.as_default():
         # The following four lines define the model layout:
-        out = nets["n0"].building(tf.layers.flatten(placeholders["in"]["i0"]), graph)
+        out = nets["n0"].building(tf.layers.flatten(placeholders["in"]["i0"]), graph, None)
         predictions["n0"] = out  # We construct n0 over its input placeholder, "in"-> "i0"
-        out = nets["n1"].building(predictions["n0"], graph)
+        out = nets["n1"].building(predictions["n0"], graph, None)
         predictions["n1"] = out  # We construct n1 over n0 because they are supposed to be sequential
 
         # Define the loss function and optimizer with the output of n1, which is the final output of the model

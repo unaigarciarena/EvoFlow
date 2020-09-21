@@ -64,7 +64,7 @@ def train_wann(nets, placeholders, sess, graph, train_inputs, train_outputs, bat
         # The following four lines define the model layout:
         sess.run(tf.global_variables_initializer())
 
-        out = nets["n0"].building(tf.layers.flatten(placeholders["in"]["i0"]), graph)
+        out = nets["n0"].building(tf.layers.flatten(placeholders["in"]["i0"]), graph, None)
         for i, layer in enumerate(nets["n0"].List_weights):  # Este for asigna el valor a todos los pesos
             assignations += [tf.assign(layer, ls[i])]
         sess.run(assignations)

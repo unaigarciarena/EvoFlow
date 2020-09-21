@@ -20,14 +20,14 @@ def train_cnn_ae(nets, placeholders, sess, graph, train_inputs, _, batch_size, h
     aux_ind = 0
     predictions = {}
     with graph.as_default():
-        out = nets["n0"].building(placeholders["in"]["i0"], graph)  # We take the ouptut of the CNN
-        out = tf.layers.flatten(out)                                # and flatten it
-        out = tf.layers.dense(out, 49)                              # before transforming it to the desired dimension
+        out = nets["n0"].building(placeholders["in"]["i0"], graph, _)  # We take the ouptut of the CNN
+        out = tf.layers.flatten(out)                                   # and flatten it
+        out = tf.layers.dense(out, 49)                                 # before transforming it to the desired dimension
 
-        predictions["n0"] = tf.reshape(out, (-1, 7, 7, 1))          # Then we reshape it so that the TCNN can take it
+        predictions["n0"] = tf.reshape(out, (-1, 7, 7, 1))             # Then we reshape it so that the TCNN can take it
 
-        out = nets["n1"].building(predictions["n0"], graph)         # Take the piece of data we're interested in (for reconstruction)
-        predictions["n1"] = out[:, :28, :28, :3]                    # as the TCNN could provide more than that
+        out = nets["n1"].building(predictions["n0"], graph, _)         # Take the piece of data we're interested in (for reconstruction)
+        predictions["n1"] = out[:, :28, :28, :3]                       # as the TCNN could provide more than that
         # Common training
         lf = tf.losses.mean_squared_error(placeholders["in"]["i0"], predictions["n1"])
 
