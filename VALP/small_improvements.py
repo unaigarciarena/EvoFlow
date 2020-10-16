@@ -303,7 +303,8 @@ def bypass(desc, safe, net=""):
         return -1
 
     # Delete all connections related to the network to be bypassed, and connect the other ends of the networks together
-    inps, cons, outs = desc.get_net_context(net)
+    inps, in_conns, out_conns, outs = desc.get_net_context(net)
+    cons = in_conns + out_conns  # Checka si esto da error
     for inp in inps:
         for out in outs:
             if len(cons) > 0:

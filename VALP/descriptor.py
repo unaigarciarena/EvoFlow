@@ -34,6 +34,15 @@ class MNMDescriptor(object):
         :param model_inputs: List of inputs of the model (InOut objects)
         :param model_outputs: List of outputs of the model (InOut objects)
         """
+        self.reachable = {}  # comp_id: [list of components that are reached by comp_id]
+        self.last_con = 0  # Counter
+        self.last_net = 0  # Counter
+        self.networks = {}  # id: ModelComponent
+        self.connections = {}  # id: Connection
+        self.inputs = {}  # id: InOut
+        self.active_outputs = []  # List of components that require an input that don't have any
+        self.outputs = {}  # id: InOut
+        self.comps_below = {}  # Dict of components providing input to the component as key of the dict
         self.name = name
         if load is not None:
             self.load(load)
@@ -47,14 +56,9 @@ class MNMDescriptor(object):
 
             self.constructed = False  # Whether the descriptor is a VVC or not
             self.max_comp = max_comp  # Maximum number of networks
-            self.networks = {}  # id: ModelComponent
-            self.connections = {}  # id: Connection
             self.inputs = model_inputs  # id: InOut
             self.active_outputs = list(model_outputs.keys())  # List of components that require an input that don't have any
             self.outputs = model_outputs  # id: InOut
-            self.reachable = {}  # comp_id: [list of components that are reached by comp_id]
-            self.last_con = 0  # Counter
-            self.last_net = 0  # Counter
 
             for i in list(model_outputs.keys()) + list(model_inputs.keys()):
                 self.reachable[i] = [i]  # All components are reached by themselves
@@ -137,17 +141,18 @@ class MNMDescriptor(object):
         """
         inputs = []
         outputs = []
-        connections = []
+        in_cons = []
+        out_cons = []
 
         for con in self.connections:
             if net == self.connections[con].input:
                 outputs += [self.connections[con].output]
-                connections += [con]
+                in_cons += [con]
             if net == self.connections[con].output:
                 inputs += [self.connections[con].input]
-                connections += [con]
+                out_cons += [con]
 
-        return inputs, connections, outputs
+        return inputs, in_cons, out_cons, outputs
 
     def add_net(self, net, index=None):
         """
@@ -180,10 +185,9 @@ class MNMDescriptor(object):
             name = "c" + str(self.last_con + 1)
         con = Connection(index1, index2, InOut(data_type=inp.producing.type, size=np.random.randint(inp.producing.size)), name)
         self.add_connection(con, name)
-        self.last_con += 1
         return name
 
-    def save(self, path):
+    def save(self, path=""):
         """
         Save the descriptor to a file
         :param path: Path where the file is to be stored
@@ -195,7 +199,7 @@ class MNMDescriptor(object):
         f = open(path, "w+")
         for ident in self.networks:
             f.write(ident + "_" + self.networks[ident].descriptor.codify_components() + "_" + str(self.networks[ident].taking.size) + "," + self.networks[ident].taking.type + "_" + str(self.networks[ident].producing.size) + "," + self.networks[ident].producing.type + "_" +
-                    str(self.networks[ident].depth) + "_" + ",".join(self.reachable[ident]) + "\n")
+                    str(self.networks[ident].depth) + "_" + ",".join(self.reachable[ident]) + "_" + ",".join(self.comps_below[ident]) + "\n")
         f.write("\n")
 
         for ident in self.inputs:
@@ -203,11 +207,12 @@ class MNMDescriptor(object):
         f.write("\n")
 
         for ident in self.outputs:
-            f.write(ident + "_" + str(self.outputs[ident].taking.size) + "_" + self.outputs[ident].taking.type + "_" + str(self.outputs[ident].depth) + "\n")
+            f.write(ident + "_" + str(self.outputs[ident].taking.size) + "_" + self.outputs[ident].taking.type + "_" + str(self.outputs[ident].depth) + "_" + ",".join(self.comps_below[ident]) + "\n")
         f.write("\n")
 
         for con in self.connections:
             f.write(self.connections[con].codify() + "\n")
+        #f.write("\n")
 
         f.close()
 
@@ -227,6 +232,7 @@ class MNMDescriptor(object):
         network_descriptors = {"Generic": GenericDescriptor, "Decoder": DecoderDescriptor, "Discrete": DiscreteDescriptor, "Convolution": ConvolutionDescriptor}
 
         if not os.path.isfile(name):
+            print("Error at loading the model")
             return None
 
         f = open(name, "r+")
@@ -235,12 +241,13 @@ class MNMDescriptor(object):
 
         i = 0
         while lines[i] != "\n":  # Each component is stored in a line
-            ident, n_inp, kind, n_hidden, layers, init, act, cond_rand, taking, producing, depth, reachable = lines[i][:-1].split("_")
+            ident, n_inp, kind, n_hidden, layers, init, act, cond_rand, taking, producing, depth, reachable, belows = lines[i][:-1].split("_")
             kwargs = {}
             if int(ident[1:]) > self.last_net:
                 self.last_net = int(ident[1:])
 
             self.reachable[ident] = reachable.split(",")
+            self.comps_below[ident] = belows.split(",")
 
             if "onv" in kind:  # Not working right now
                 filters, sizes, layers, strides = layers.split("*")
@@ -279,15 +286,15 @@ class MNMDescriptor(object):
 
         while lines[i] != "\n":  # Outputs
 
-            ident, size, kind, depth = lines[i].split("_")
+            ident, size, kind, depth, belows = lines[i].split("_")
 
             self.outputs[ident] = ModelComponent(InOut(size=int(size), data_type=kind), None, int(depth))
+            self.comps_below[ident] = belows.split(",")
             i += 1
 
         i += 1
 
         while i < len(lines):  # Connections
-
             name, inp, outp, kind, size = lines[i].split("_")
 
             if int(name[1:]) > self.last_con:
@@ -295,6 +302,7 @@ class MNMDescriptor(object):
 
             self.connections[name] = Connection(inp, outp, InOut(kind, int(size)), name)
             i += 1
+        self.update_below()
 
     # Getter-like functions
 
@@ -340,6 +348,7 @@ class MNMDescriptor(object):
     def pop_con(self, con):
         c = self.connections[con]
         del self.connections[con]
+        self.update_below()
         return c
 
     def conn_exists(self, i0, i1):
@@ -361,7 +370,11 @@ class MNMDescriptor(object):
         return np.random.choice(list(self.inputs.keys()))
 
     def add_connection(self, connection, name=""):
-        self.connections[("c" + str(self.last_con+1)) if name == "" else name] = connection
+        self.last_con += 1
+        c_name = ("c" + str(self.last_con)) if name == "" else name
+        self.connections[c_name] = connection
+        self.update_below()
+        return c_name
 
     def active_indices(self):
         return self.active_outputs
@@ -381,7 +394,19 @@ class MNMDescriptor(object):
             if (type(comp) is dict and con.output in comp) or ("str" in type(comp).__name__ and comp == con.output):
                 ins += [con.input]
 
-        return ins
+        return sorted(ins)
+
+    def update_below(self):
+        """
+        This function updates the dict containing the components below each component
+        :return: --
+        """
+        for comp in list(self.networks.keys()) + list(self.outputs.keys()):
+            if comp in self.comps_below:
+                below = self.comp_by_input(comp)
+                self.comps_below[comp] += [bel for bel in below if bel not in self.comps_below[comp]]
+            else:
+                self.comps_below[comp] = self.comp_by_input(comp)
 
     def comp_by_output(self, comp):
         """
@@ -397,7 +422,6 @@ class MNMDescriptor(object):
         return outs
 
     def nets_that_produce(self, data_type, from_list):
-        
         return [net for net in from_list if self.comp_by_ind(net).producing.type in data_type]
 
     def nodes(self):

@@ -20,7 +20,7 @@ class MNM(object):
     """
     Tensorflow level implementation of the VALP
     """
-    def __init__(self, descriptor, batch_size, inputs, outputs, loss_func_weights, name="", load=None, init=True, lr=0.01, opt=0, random_seed=None):
+    def __init__(self, descriptor, batch_size, inputs, outputs, loss_func_weights, name="", load=None, init=True, lr=0.001, opt=0, random_seed=None):
 
         if random_seed is not None:
             np.random.seed(random_seed)
@@ -130,7 +130,7 @@ class MNM(object):
             self.b_ph[pred] = tf.placeholder(dtype="float32")
             self.b_assign[pred] = tf.assign(self.loss_weights[pred], self.b_ph[pred])
             if self.descriptor.outputs[pred].taking.type == "discrete":  # If this fails, it is being initialized twice
-                self.sub_losses[pred] = self.loss_weights[pred] * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.predictions[pred], labels=self.outputs[pred]))
+                self.sub_losses[pred] = self.loss_weights[pred] * tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.predictions[pred], labels=self.outputs[pred]))  # If this fails, it is being initialized twice
                 self.loss_function += self.sub_losses[pred]
                 self.predictions[pred] = tf.reshape(tf.argmax(self.predictions[pred], axis=1), (-1, 1))  # tf.sigmoid(self.predictions[pred])
                 self.subopts[pred] = opts[self.opt](learning_rate=self.lr).minimize(self.sub_losses[pred], var_list=variables)
@@ -145,7 +145,7 @@ class MNM(object):
                         self.loss_weights[network] = tf.Variable(self.loss_weights[pred], dtype=np.float, trainable=trainable_weights)
                         self.b_ph[network] = tf.placeholder(dtype="float32")
                         self.b_assign[network] = tf.assign(self.loss_weights[network], self.b_ph[network])
-                        self.sub_losses[network] = self.loss_weights[network] * -0.5 * tf.reduce_mean(1 + self.components[network].z_log_sigma_sq - tf.square(self.components[network].z_mean) - tf.square(tf.exp(self.components[network].z_log_sigma_sq)))
+                        self.sub_losses[network] = self.loss_weights[network] * -0.5 * tf.reduce_mean(1 + self.components[network].z_log_sigma_sq*2 - tf.square(self.components[network].z_mean) - tf.square(tf.exp(self.components[network].z_log_sigma_sq)))
                         self.loss_function += self.sub_losses[network]
                         self.loss_function_sample += self.sub_losses[network]
                         to_opt += self.sub_losses[network]
@@ -267,11 +267,12 @@ class MNM(object):
         train_dict = {}
         keys = list(self.sub_losses.keys())
         keys.sort(reverse=True)
+        print(keys)
         aux_weights = self.sess.run(self.loss_weights)
         ws = np.array([aux_weights[x] for x in keys])
         record = np.zeros((epoch_lim, len(ws)*2))
         cond = np.zeros(len(keys))
-        
+
         for inp in self.inputs:
 
             test_dict[self.inputs[inp]] = self.input_data[inp][int(self.input_data[inp].shape[0]*proportion):]
@@ -296,7 +297,6 @@ class MNM(object):
             last_res[1:] = last_res[:-1]
             aux_losses = self.sess.run(self.sub_losses, test_dict)
             last_res[0] = [aux_losses[keys[i]]/(ws[i] if ws[i] > 0 else 1) for i in range(len(keys))]
-
             if epoch % display_step == 1:
                 print(epoch, last_res[0, 0], last_res[0, 1], last_res[0, 2], last_res[0, 3])
 
@@ -322,10 +322,11 @@ class MNM(object):
                         multiplier = 1 + ws[ikey]*incr
                         cond[ikey] = 0
                     ws[ikey] *= multiplier
-                print(epoch, last_res[0, 0], last_res[0, 1], last_res[0, 2], last_res[0, 3], np.sum([last_res[0, 0], last_res[0, 1], last_res[0, 2], last_res[0, 3]]))
+
+                print(epoch, last_res[0, 0], "\t", last_res[0, 1], "\t",  last_res[0, 2], "\t",  last_res[0, 3], "\t",  np.sum([last_res[0, 0], last_res[0, 1], last_res[0, 2], last_res[0, 3]]))
                 ws = ws / np.sum(ws) * ws.shape
                 self.sess.run([self.b_assign[key] for key in keys], feed_dict={self.b_ph[keys[i]]: ws[i]/(np.max([aux_losses[keys[i]], 0.1]) if scaling else 1) for i in range(ws.shape[0])})
-                print(self.sess.run(self.loss_weights))
+                #print(self.sess.run(self.loss_weights))
                 #conv_param = np.sqrt(conv_param)
 
         return record
@@ -441,14 +442,13 @@ class MNM(object):
 
             if comp not in self.initialized and "i" not in comp:  # If it is not already in the tf model, or is an input
                 self.initialized += [comp]  # Save as initialized
-                comps_below = self.descriptor.comp_by_input(comp)  # Get all the components on which comp depends
-                self.recursive_init(comps_below, aux_pred, load, load_path)  # Initialize them
+                self.recursive_init(self.descriptor.comps_below[comp], aux_pred, load, load_path)  # Initialize them
 
                 net = self.descriptor.comp_by_ind(comp)  # Get the tf structure of comp
 
                 aux_input = []
 
-                for comp_below in comps_below:  # For each component on which comp depends
+                for comp_below in self.descriptor.comps_below[comp]:  # For each component on which comp depends
                     aux_input += [self.component_output_by_id(comp_below)]
                 self.components[comp] = network_types[type(net.descriptor).__name__[:-10]](net.descriptor, comp)  # Initialize the Network (as tf)
                 self.components[comp].building(aux_input, load, load_path + self.name + "_" + comp + ".npy")  # Initialize the Network (as tf)
@@ -477,14 +477,15 @@ class MNM(object):
         saver = tf.train.Saver()
         saver.restore(self.sess, path)
 
-    def save_weights(self, path):
-
+    def save_weights(self, path=""):
+        if path == "":
+            path = str(self.descriptor.name)
         for cmp in self.components:
             self.components[cmp].save_weights(self.sess, path + str(self.name) + "_")
 
-    def load_weights(self):
+    def load_weights(self, path=""):
 
-        self.initialize(True)
+        self.initialize(True, load_path=path)
 
 
 def reset_graph(random_seed):

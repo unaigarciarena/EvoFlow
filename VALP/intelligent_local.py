@@ -1,5 +1,3 @@
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 import numpy as np
 from VALP.descriptor import MNMDescriptor
@@ -12,6 +10,8 @@ from PIL import Image
 import argparse
 import random
 from VALP.small_improvements import del_con, add_con, bypass, divide_con, is_deletable, is_bypassable
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 def ranking(orig_data):
@@ -46,7 +46,7 @@ def load_model(model_name="Mobile"):
     from keras.models import model_from_json
 
     global loaded_model
-    model_paths = {"Mobile": "Mobile-99-94/", "Inception": "Inception-95-91/"}
+    model_paths = {"Mobile": "../Mobile-99-94/", "Inception": "../Inception-95-91/"}
 
     json_file = open(model_paths[model_name] + 'model.json', 'r')
 
@@ -110,9 +110,9 @@ def train_init():
 
     model = MNM(desc, hypers["btch_sz"], data_inputs["Train"], data_outputs["Train"], loss_func_weights={"o0": hypers["wo0"], "o1": hypers["wo1"], "o2": hypers["wo2"]}, name=name, lr=hypers["lr"], opt=hypers["opt"], random_seed=seed)
     if intelligent_training == 2:
-        loss_weights = model.sequential_training(hypers["btch_sz"], iter_lim // 50, conv_param, proportion, iter_lim, display_step=10)
+        loss_weights = model.sequential_training(hypers["btch_sz"], iter_lim // 50, conv_param, proportion, iter_lim, display_step=-1)
     else:
-        loss_weights = model.autoset_training(hypers["btch_sz"], iter_lim//50, conv_param, proportion, iter_lim, display_step=1, incr=incr, decr=decr, scaling=scale)
+        loss_weights = model.autoset_training(hypers["btch_sz"], iter_lim//50, conv_param, proportion, iter_lim, display_step=-1, incr=incr, decr=decr, scaling=scale)
 
 
     # ####### Save model characteristics.
@@ -183,8 +183,8 @@ def increasing_mutations(nets, probs, desc):
     for comp in reversed(inverse):  # Try mutation near the networks according to the previous arrangement (could happen that some places cannot fit mutations).
 
         reaching_outs = list(set([x for x in desc.reachable[comp] if "o" in x]))  # Outputs affected by the mutation
-        _, conns, _ = desc.get_net_context(comp)  # Connections near the selected network (which could be affected by the mutation)
-
+        _, in_conns, out_conns, _ = desc.get_net_context(comp)  # Connections near the selected network (which could be affected by the mutation)
+        conns = in_conns + out_conns  # Checka si esto da error
         for mutation in np.random.permutation(["add_con", "divide_con"]):  # Try both mutations in case the first one does not work
             res, trainables = mutate(mutation, desc, comp, conns)
             if res != -1:
@@ -209,7 +209,8 @@ def reducing_mutations(nets, probs, desc):
     comp = np.random.choice(nets, p=probs)  # Choose network to which area the mutation is going to be applied
 
     reaching_outs = list(set([x for x in desc.reachable[comp] if "o" in x]))  # Outputs affected by the mutation
-    _, conns, _ = desc.get_net_context(comp)
+    _, in_conns, out_conns, _ = desc.get_net_context(comp)
+    conns = in_conns + out_conns  # Checka si esto da error
     mutations = [con for con in conns if is_deletable(desc, con)]  # Add deletable connections to the mutation pool
     mutations += ["reinit"]
 
@@ -291,7 +292,8 @@ def modify(nets, probs, ranks, desc, hypers, seed=0, seed2=0):
             trainables, res, mutation, comp, reaching_outs = increasing_mutations(nets, probs, desc)
     else:  # Random application
         comp = np.random.choice(nets)
-        _, conns, _ = desc.get_net_context(comp)
+        _, in_conns, out_conns, _ = desc.get_net_context(comp)
+        conns = in_conns + out_conns  # Checka si esto da error
         reaching_outs = list(set([x for x in desc.reachable[comp] if "o" in x]))  # Outputs affected by the mutation
         mutations = [con for con in conns if is_deletable(desc, con)]
 
@@ -303,7 +305,7 @@ def modify(nets, probs, ranks, desc, hypers, seed=0, seed2=0):
         mutation = np.random.choice(mutations)
         res, trainables = mutate(mutation, desc, comp, conns)
     print(mutation)
-    model = MNM(desc, hypers["btch_sz"], data_inputs["Train"], data_outputs["Train"], loss_func_weights={"o0": hypers["wo0"], "o1": hypers["wo1"], "o2": hypers["wo2"]}, name=name, load=None, init=False, random_seed=seed2, lr=0.0001)
+    model = MNM(desc, hypers["btch_sz"], data_inputs["Train"], data_outputs["Train"], loss_func_weights={"o0": hypers["wo0"], "o1": hypers["wo1"], "o2": hypers["wo2"]}, name=name, load=None, init=False, random_seed=seed2, lr=0.001)
 
     model.initialize(load=True, load_path="", variables=trainables)
 
@@ -371,6 +373,7 @@ def network_relevance(valp, orig_res):
     print(results)
     rank = np.concatenate([ranking(results[:, i]) for i in range(results.shape[1])]).reshape(results.shape, order="F")
     # From here on, the criterion is still raw
+    print(rank)
     rank[rank <= lim] = 0
     rank[rank > lim] = 1
     rank[results < 1.03] = 0
@@ -386,8 +389,8 @@ def network_relevance(valp, orig_res):
 
 
 def check_mut(n_nets):
-    for seed in range(1, 30):
-        networks, probabilities, rankings, descriptor, hyperparameters = reload(str(n_nets) + "nets/model_" + str(seed) + "/", seed=seed)
+    for seed1 in range(1, 30):
+        networks, probabilities, rankings, descriptor, hyperparameters = reload(str(n_nets) + "nets/model_" + str(seed1) + "/", seed=seed1)
         print(probabilities)
 
 
@@ -407,7 +410,7 @@ if __name__ == "__main__":
     n_networks = args.integers[7]
     conv_param = 0.9
     proportion = 0.9
-    iter_lim = 10000
+    iter_lim = 40000
 
     if intelligent_training == 0:
         wo0, wo1, wo2 = 1, 1, 1
@@ -442,7 +445,7 @@ if __name__ == "__main__":
         incr, decr = 0.25, 0.25
         scale = True
 
-    hyps = {"btch_sz": [150], "wo0": [wo0], "wo1": [wo1], "wo2": [wo2], "opt": [0], "lr": [0.001]}
+    hyps = {"btch_sz": [50], "wo0": [wo0], "wo1": [wo1], "wo2": [wo2], "opt": [0], "lr": [0.0001]}
 
     loss_weights, (data_inputs, inp_dict), (data_outputs, outp_dict), (x_train, c_train, y_train, x_test, c_test, y_test) = diol()
     loaded_model = load_model()

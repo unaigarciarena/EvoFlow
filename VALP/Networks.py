@@ -103,10 +103,12 @@ class MLP(Network):
             self.List_weights, self.List_bias = np.load(path, allow_pickle=True)
 
             for i in range(len(self.List_weights)):
+
                 self.List_weights[i] = tf.Variable(self.List_weights[i])
                 self.List_bias[i] = tf.Variable(self.List_bias[i])
 
                 if i == 0:  # If input
+
                     if self.List_weights[i].shape[0] < self.descriptor.input_dim:  # In case the input size of a network has been increased, we complete the weights of the first layer
                         if "uniform" in self.descriptor.init_functions[i].__name__:
                             new = tf.Variable(self.descriptor.init_functions[i](shape=[self.descriptor.input_dim-self.List_weights[i].shape[0].value, self.List_weights[i].shape[1].value], minval=-0.1, maxval=0.1), name="W"+str(i))

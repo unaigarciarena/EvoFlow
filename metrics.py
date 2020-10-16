@@ -2,6 +2,7 @@
 Auxiliary predefined functions. Can be expanded by the user.
 """
 import numpy as np
+from sklearn.metrics import accuracy_score
 
 evals = []
 best = 1
@@ -26,3 +27,15 @@ def accuracy_error(true, prediction):
 def ret_evals():
     global evals
     return evals
+
+
+# You can print the variables computed in each instruction for understanding better what we are doing
+def balanced_accuracy(true, prediction):
+    # We compute the number of classes (n), and the number of examples per class
+    classes, count = np.unique(true, return_counts=True)
+    # We compute the weights for each class. The summation of the weights of all examples belonging to a class must be 1/n
+    class_weights = [1/len(classes)/i for i in count]
+    # We assign weights for each example, depending on their class
+    example_weights = [class_weights[i] for i in true]
+    # We compute the accuracy weighting each example according to the representation of the class it belongs to in the data
+    return accuracy_score(true, prediction, sample_weight=example_weights)
