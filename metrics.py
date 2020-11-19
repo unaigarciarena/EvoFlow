@@ -9,7 +9,7 @@ best = 1
 
 
 def mse(true, prediction):
-    return (true-prediction)**2/true.shape[0]
+    return np.sum((true-prediction)**2)/true.shape[0]
 
 
 def accuracy_error(true, prediction):

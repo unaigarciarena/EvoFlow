@@ -240,8 +240,8 @@ class Evolving:
             self.out_placeholders["o0"] = tf.placeholder(tf.float32, shape=[None] + [i for i in self.train_outputs["o0"].shape[1:]])
 
             inp = tf.concat([tf.layers.flatten(self.inp_placeholders[i]) for i in self.inp_placeholders.keys()], axis=1)
-            net.initialization(graph)
-            out = net.building(inp, graph)
+            net.initialization(graph, '_')
+            out = net.building(inp, graph, '_')
             self.predictions["o0"] = out
 
             lf = self.loss_function(self.out_placeholders["o0"], out)
