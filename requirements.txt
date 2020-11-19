@@ -1,0 +1,7 @@
+scikit-learn
+tensorflow==1.15.0
+keras==2.2.5
+numpy==1.18.1
+deap
+matplotlib
+seaborn
