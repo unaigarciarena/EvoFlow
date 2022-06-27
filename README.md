@@ -143,6 +143,10 @@ More examples of this kind of learning can be found in the following examples:
 
 Besides this type of customization, new model structures can also be added to EvoFlow. For that, new a new Descriptor and Network class have to be defined, following the MLPDescriptor-MLP and CNNDescriptor-CNN patterns in <a href="./Network.py">Network.py</a>. This requires deeper knowledge about how EvoFlow works.
 
+## DEATF
+
+A version of this library for Tensorflow 2.0 (or greater) can be found <a href="https://github.com/IvanHCenalmor/deatf">here</a>.
+
 ## Publications
 
 An early version of EvoFlow was used for *Evolved GANs for generating Pareto set approximations* [[4]](#4). If you were to find EvoFlow interesting and happen to use it for your own applications, please, consider citing that paper:
